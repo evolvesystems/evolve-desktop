@@ -1,0 +1,99 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "EvolveApp",
+  "version": "0.1.0",
+  "identifier": "com.evolveapp.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      }
+    },
+    "macOS": {
+      "entitlements": null,
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
+    }
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "EvolveApp",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "center": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": false,
+        "theme": "Light"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/*", "$RESOURCE/*"]
+      }
+    },
+    "trayIcon": {
+      "id": "main",
+      "iconPath": "icons/icon.png",
+      "menuOnLeftClick": false,
+      "tooltip": "EvolveApp"
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "store": {
+      "path": ".evolveapp.dat"
+    },
+    "notification": {
+      "identifier": "com.evolveapp.desktop"
+    },
+    "http": {
+      "scope": ["http://localhost:8000/*", "https://api.evolveapp.com/*", "https://releases.evolveapp.com/*"]
+    },
+    "fs": {
+      "scope": ["$APPDATA/*", "$APPDATA/evolveapp/*"]
+    },
+    "dialog": {
+      "all": true
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://releases.evolveapp.com/{{target}}/{{current_version}}"
+      ],
+      "dialog": true,
+      "pubkey": "UPDATE_PUBLIC_KEY_PLACEHOLDER"
+    }
+  }
+}

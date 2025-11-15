@@ -1,0 +1,9 @@
+Package: evolve-app
+Version: 0.1.0
+Architecture: amd64
+Installed-Size: 24978
+Maintainer: EvolveApp Team
+Priority: optional
+Depends: libappindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0
+Description: EvolveApp - Modular Business Management Desktop Application
+ (none)

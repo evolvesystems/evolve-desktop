@@ -1,0 +1,8 @@
+[Desktop Entry]
+Categories=
+Comment=EvolveApp - Modular Business Management Desktop Application
+Exec=evolve-desktop
+Icon=evolve-desktop
+Name=EvolveApp
+Terminal=false
+Type=Application

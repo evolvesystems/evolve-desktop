@@ -1,0 +1,14 @@
+/home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/deps/thiserror-47be3e612d49729f.d: /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/build/thiserror-546e72f5d8839eac/out/private.rs
+
+/home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/deps/libthiserror-47be3e612d49729f.rlib: /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/build/thiserror-546e72f5d8839eac/out/private.rs
+
+/home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/deps/libthiserror-47be3e612d49729f.rmeta: /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs /home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs /home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/build/thiserror-546e72f5d8839eac/out/private.rs
+
+/home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/lib.rs:
+/home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/aserror.rs:
+/home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/display.rs:
+/home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/var.rs:
+/home/john/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.17/src/private.rs:
+/home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/build/thiserror-546e72f5d8839eac/out/private.rs:
+
+# env-dep:OUT_DIR=/home/john/sources/evolveapp/evolve-desktop/src-tauri/target/release/build/thiserror-546e72f5d8839eac/out
