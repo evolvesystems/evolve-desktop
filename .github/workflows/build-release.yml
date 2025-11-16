@@ -120,8 +120,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          name: Release ${{ github.event.inputs.version || github.ref_name }}
+          tag_name: v${{ github.event.inputs.version || github.ref_name }}
+          name: Release v${{ github.event.inputs.version || github.ref_name }}
           body: ${{ github.event.inputs.release_notes || 'No release notes provided' }}
           draft: false
           prerelease: ${{ github.event.inputs.is_stable != 'true' }}
