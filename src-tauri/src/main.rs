@@ -2,6 +2,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::Manager;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use std::fs;
 
 // Database module commands
 mod database;
@@ -33,6 +36,12 @@ async fn sync_data(module_id: String) -> Result<String, String> {
 }
 
 fn main() {
+    // Initialize logging to file
+    init_logging();
+
+    tracing::info!("EvolveApp starting...");
+    tracing::info!("Version: {}", env!("CARGO_PKG_VERSION"));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -48,11 +57,14 @@ fn main() {
             sync_data
         ])
         .setup(|app| {
+            tracing::info!("Running setup...");
+
             // Initialize database on startup
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                tracing::info!("Initializing database connection...");
                 if let Err(e) = database::initialize_database().await {
-                    eprintln!("Failed to initialize database: {}", e);
+                    tracing::error!("Failed to initialize database: {}", e);
                     // Show error dialog on Windows
                     #[cfg(target_os = "windows")]
                     {
@@ -61,14 +73,64 @@ fn main() {
                             .args(["/time:10", "*", &format!("EvolveApp Error: {}", e)])
                             .spawn();
                     }
+                } else {
+                    tracing::info!("Database initialized successfully");
                 }
             });
 
-            // Log startup success
-            println!("EvolveApp started successfully");
+            tracing::info!("Setup completed successfully");
 
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Initialize logging to file
+/// Logs are written to: %APPDATA%/com.evolveapp.desktop/logs/ (Windows)
+///                      ~/Library/Application Support/com.evolveapp.desktop/logs/ (macOS)
+///                      ~/.local/share/com.evolveapp.desktop/logs/ (Linux)
+fn init_logging() {
+    // Get app data directory for logs
+    let app_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap())
+        .join("com.evolveapp.desktop");
+
+    let log_dir = app_dir.join("logs");
+
+    // Create log directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all(&log_dir) {
+        eprintln!("Failed to create log directory: {}", e);
+        return;
+    }
+
+    // Create file appender for daily log rotation
+    let file_appender = tracing_appender::rolling::daily(log_dir.clone(), "evolveapp.log");
+
+    // Create console writer for stdout
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+
+    // Build logging layers
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_line_number(true);
+
+    let stdout_layer = tracing_subscriber::fmt::layer()
+        .with_target(false);
+
+    // Initialize subscriber with both file and console output
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,tauri=debug,evolve_desktop=debug".into())
+        )
+        .with(file_layer)
+        .with(stdout_layer)
+        .init();
+
+    // Log the log file location
+    tracing::info!("Logs directory: {}", log_dir.display());
 }

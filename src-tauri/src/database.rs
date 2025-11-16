@@ -11,8 +11,8 @@ pub struct ApiConfig {
 
 // No local database initialization needed
 pub async fn initialize_database() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Using remote database via eiq-manager API");
-    println!("No local database initialization required");
+    tracing::info!("Using remote database via eiq-manager API");
+    tracing::info!("No local database initialization required");
     Ok(())
 }
 
@@ -30,7 +30,7 @@ pub async fn check_api_connection() -> Result<bool, Box<dyn std::error::Error>> 
     let config = get_api_config().await;
 
     // TODO: Make actual API health check request
-    println!("Checking API connection to: {}", config.base_url);
+    tracing::info!("Checking API connection to: {}", config.base_url);
 
     // For now, return true
     // In production, make actual HTTP request to /api/health
