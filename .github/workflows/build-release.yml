@@ -10,6 +10,21 @@ on:
         description: 'Release version (e.g., 1.0.5)'
         required: true
         type: string
+      release_notes:
+        description: 'Release notes'
+        required: false
+        type: string
+        default: ''
+      is_stable:
+        description: 'Mark as stable release'
+        required: false
+        type: string
+        default: 'true'
+      is_latest:
+        description: 'Mark as latest release'
+        required: false
+        type: string
+        default: 'true'
 
 jobs:
   build:
@@ -105,8 +120,9 @@ jobs:
         with:
           tag_name: ${{ github.event.inputs.version || github.ref_name }}
           name: Release ${{ github.event.inputs.version || github.ref_name }}
+          body: ${{ github.event.inputs.release_notes || 'No release notes provided' }}
           draft: false
-          prerelease: false
+          prerelease: ${{ github.event.inputs.is_stable != 'true' }}
           files: |
             artifacts/**/*.deb
             artifacts/**/*.AppImage
