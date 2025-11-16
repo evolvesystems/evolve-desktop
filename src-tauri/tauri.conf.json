@@ -81,7 +81,14 @@
       "identifier": "com.evolveapp.desktop"
     },
     "http": {
-      "scope": ["http://localhost:8000/*", "https://api.evolveapp.com/*", "https://releases.evolveapp.com/*"]
+      "scope": [
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "http://192.168.*.*:*",
+        "http://10.*.*.*:*",
+        "https://api.evolveapp.com/*",
+        "https://releases.evolveapp.com/*"
+      ]
     },
     "fs": {
       "scope": ["$APPDATA/*", "$APPDATA/evolveapp/*"]
