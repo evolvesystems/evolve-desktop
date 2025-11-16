@@ -41,14 +41,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                // Hide to tray instead of closing (tray configured in tauri.conf.json)
-                window.hide().unwrap();
-                api.prevent_close();
-            }
-            _ => {}
-        })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_app_version,
@@ -61,8 +53,19 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = database::initialize_database().await {
                     eprintln!("Failed to initialize database: {}", e);
+                    // Show error dialog on Windows
+                    #[cfg(target_os = "windows")]
+                    {
+                        use std::process::Command;
+                        let _ = Command::new("msg")
+                            .args(["/time:10", "*", &format!("EvolveApp Error: {}", e)])
+                            .spawn();
+                    }
                 }
             });
+
+            // Log startup success
+            println!("EvolveApp started successfully");
 
             Ok(())
         })
