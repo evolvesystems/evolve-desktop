@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "EvolveApp",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "identifier": "com.evolveapp.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -64,39 +64,5 @@
       }
     }
   },
-  "plugins": {
-    "shell": {
-      "open": true
-    },
-    "store": {
-      "path": ".evolveapp.dat"
-    },
-    "notification": {
-      "identifier": "com.evolveapp.desktop"
-    },
-    "http": {
-      "scope": [
-        "http://localhost:*",
-        "http://127.0.0.1:*",
-        "http://192.168.*.*:*",
-        "http://10.*.*.*:*",
-        "https://api.evolveapp.com/*",
-        "https://releases.evolveapp.com/*"
-      ]
-    },
-    "fs": {
-      "scope": ["$APPDATA/*", "$APPDATA/evolveapp/*"]
-    },
-    "dialog": {
-      "all": true
-    },
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://releases.evolveapp.com/{{target}}/{{current_version}}"
-      ],
-      "dialog": true,
-      "pubkey": "UPDATE_PUBLIC_KEY_PLACEHOLDER"
-    }
-  }
+  "plugins": {}
 }
