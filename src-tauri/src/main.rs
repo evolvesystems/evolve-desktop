@@ -137,7 +137,7 @@ fn init_logging() {
     let file_appender = tracing_appender::rolling::daily(log_dir.clone(), "evolveapp.log");
 
     // Create console writer for stdout
-    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // Build logging layers
     let file_layer = tracing_subscriber::fmt::layer()
@@ -159,6 +159,10 @@ fn init_logging() {
         .with(file_layer)
         .with(stdout_layer)
         .init();
+
+    // CRITICAL: Keep the guard alive for the entire program
+    // Leaking it prevents the logging thread from being shut down
+    std::mem::forget(guard);
 
     // Log the log file location
     tracing::info!("Logs directory: {}", log_dir.display());
