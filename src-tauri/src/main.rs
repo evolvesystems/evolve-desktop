@@ -9,6 +9,7 @@ use std::fs;
 // Database module commands
 mod database;
 mod sync;
+mod diagnostics;
 
 // Tauri commands
 #[tauri::command]
@@ -41,6 +42,25 @@ fn main() {
 
     tracing::info!("EvolveApp starting...");
     tracing::info!("Version: {}", env!("CARGO_PKG_VERSION"));
+
+    // Collect and log system diagnostics
+    let diagnostic_report = diagnostics::collect_diagnostics();
+    diagnostics::log_diagnostics(&diagnostic_report);
+
+    // Critical check: WebView2 must be installed on Windows
+    #[cfg(target_os = "windows")]
+    if !diagnostic_report.webview2_available {
+        let error_msg = "WebView2 is not installed. This is required for EvolveApp to run on Windows.";
+        diagnostics::create_crash_report(error_msg);
+
+        // Show error dialog on Windows
+        use std::process::Command;
+        let _ = Command::new("msg")
+            .args(["/time:30", "*", &format!("EvolveApp Error: {}\n\nDownload WebView2 from:\nhttps://developer.microsoft.com/en-us/microsoft-edge/webview2/", error_msg)])
+            .spawn();
+
+        panic!("{}", error_msg);
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -75,6 +95,15 @@ fn main() {
                     }
                 } else {
                     tracing::info!("Database initialized successfully");
+                }
+
+                // Optionally send diagnostics to EIQ Manager (non-blocking)
+                let api_config = database::get_api_config().await;
+                let diag_report = diagnostics::collect_diagnostics();
+
+                if let Err(e) = diagnostics::send_diagnostics_to_server(&diag_report, &api_config.base_url).await {
+                    tracing::warn!("Failed to send diagnostics to server: {}", e);
+                    // Don't fail startup if diagnostics can't be sent
                 }
             });
 
