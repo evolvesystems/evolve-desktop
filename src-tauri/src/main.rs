@@ -69,6 +69,7 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             get_app_version,
@@ -103,6 +104,54 @@ fn main() {
                 if let Err(e) = diagnostics::send_diagnostics_to_server(&diag_report, &api_config.base_url).await {
                     tracing::warn!("Failed to send diagnostics to server: {}", e);
                     // Don't fail startup if diagnostics can't be sent
+                }
+            });
+
+            // Check for updates on startup
+            let app_handle_clone = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tracing::info!("Checking for updates...");
+
+                match app_handle_clone.updater_builder().build() {
+                    Ok(updater) => {
+                        match updater.check().await {
+                            Ok(Some(update)) => {
+                                tracing::info!("Update available: version {} -> {}", update.current_version, update.version);
+
+                                // Download and install update
+                                match update.download_and_install(
+                                    |chunk_length, content_length| {
+                                        let progress = if let Some(total) = content_length {
+                                            (chunk_length as f64 / total as f64) * 100.0
+                                        } else {
+                                            0.0
+                                        };
+                                        tracing::info!("Download progress: {:.2}%", progress);
+                                    },
+                                    || {
+                                        tracing::info!("Download completed, extracting...");
+                                    }
+                                ).await {
+                                    Ok(_) => {
+                                        tracing::info!("Update installed successfully! App will restart.");
+                                        // App will restart automatically
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to install update: {}", e);
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                tracing::info!("No updates available - running latest version");
+                            }
+                            Err(e) => {
+                                tracing::warn!("Update check failed: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to build updater: {}", e);
+                    }
                 }
             });
 
