@@ -20,6 +20,7 @@
               EvolveApp
             </h1>
             <p class="text-base-content/60 mt-2">Sign in to your account</p>
+            <p class="text-base-content/40 text-xs mt-1">Version {{ appVersion }}</p>
           </div>
 
           <!-- Login Form -->
@@ -102,9 +103,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { invoke } from '@tauri-apps/api/core'
 
 const router = useRouter()
 const route = useRoute()
@@ -114,6 +116,16 @@ const email = ref('')
 const password = ref('')
 const loading = ref(false)
 const error = ref<string | null>(null)
+const appVersion = ref('')
+
+onMounted(async () => {
+  // Get app version from Tauri backend
+  try {
+    appVersion.value = await invoke<string>('get_app_version')
+  } catch (e) {
+    appVersion.value = '1.0.10'
+  }
+})
 
 async function handleLogin() {
   loading.value = true

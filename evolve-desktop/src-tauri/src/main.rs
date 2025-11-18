@@ -2,10 +2,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::Manager;
+use tauri_plugin_updater::UpdaterExt;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use std::fs;
 
 // Database module commands
 mod database;
 mod sync;
+mod diagnostics;
 
 // Tauri commands
 #[tauri::command]
@@ -33,6 +38,31 @@ async fn sync_data(module_id: String) -> Result<String, String> {
 }
 
 fn main() {
+    // Initialize logging to file
+    init_logging();
+
+    tracing::info!("EvolveApp starting...");
+    tracing::info!("Version: {}", env!("CARGO_PKG_VERSION"));
+
+    // Collect and log system diagnostics
+    let diagnostic_report = diagnostics::collect_diagnostics();
+    diagnostics::log_diagnostics(&diagnostic_report);
+
+    // Critical check: WebView2 must be installed on Windows
+    #[cfg(target_os = "windows")]
+    if !diagnostic_report.webview2_available {
+        let error_msg = "WebView2 is not installed. This is required for EvolveApp to run on Windows.";
+        diagnostics::create_crash_report(error_msg);
+
+        // Show error dialog on Windows
+        use std::process::Command;
+        let _ = Command::new("msg")
+            .args(["/time:30", "*", &format!("EvolveApp Error: {}\n\nDownload WebView2 from:\nhttps://developer.microsoft.com/en-us/microsoft-edge/webview2/", error_msg)])
+            .spawn();
+
+        panic!("{}", error_msg);
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -41,14 +71,6 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
-                // Hide to tray instead of closing (tray configured in tauri.conf.json)
-                window.hide().unwrap();
-                api.prevent_close();
-            }
-            _ => {}
-        })
         .invoke_handler(tauri::generate_handler![
             greet,
             get_app_version,
@@ -56,16 +78,141 @@ fn main() {
             sync_data
         ])
         .setup(|app| {
+            tracing::info!("Running setup...");
+
             // Initialize database on startup
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                tracing::info!("Initializing database connection...");
                 if let Err(e) = database::initialize_database().await {
-                    eprintln!("Failed to initialize database: {}", e);
+                    tracing::error!("Failed to initialize database: {}", e);
+                    // Show error dialog on Windows
+                    #[cfg(target_os = "windows")]
+                    {
+                        use std::process::Command;
+                        let _ = Command::new("msg")
+                            .args(["/time:10", "*", &format!("EvolveApp Error: {}", e)])
+                            .spawn();
+                    }
+                } else {
+                    tracing::info!("Database initialized successfully");
+                }
+
+                // Optionally send diagnostics to EIQ Manager (non-blocking)
+                let api_config = database::get_api_config().await;
+                let diag_report = diagnostics::collect_diagnostics();
+
+                if let Err(e) = diagnostics::send_diagnostics_to_server(&diag_report, &api_config.base_url).await {
+                    tracing::warn!("Failed to send diagnostics to server: {}", e);
+                    // Don't fail startup if diagnostics can't be sent
                 }
             });
+
+            // Check for updates on startup
+            let app_handle_clone = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tracing::info!("Checking for updates...");
+
+                match app_handle_clone.updater_builder().build() {
+                    Ok(updater) => {
+                        match updater.check().await {
+                            Ok(Some(update)) => {
+                                tracing::info!("Update available: version {} -> {}", update.current_version, update.version);
+
+                                // Download and install update
+                                match update.download_and_install(
+                                    |chunk_length, content_length| {
+                                        let progress = if let Some(total) = content_length {
+                                            (chunk_length as f64 / total as f64) * 100.0
+                                        } else {
+                                            0.0
+                                        };
+                                        tracing::info!("Download progress: {:.2}%", progress);
+                                    },
+                                    || {
+                                        tracing::info!("Download completed, extracting...");
+                                    }
+                                ).await {
+                                    Ok(_) => {
+                                        tracing::info!("Update installed successfully! App will restart.");
+                                        // App will restart automatically
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Failed to install update: {}", e);
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                tracing::info!("No updates available - running latest version");
+                            }
+                            Err(e) => {
+                                tracing::warn!("Update check failed: {}", e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to build updater: {}", e);
+                    }
+                }
+            });
+
+            tracing::info!("Setup completed successfully");
 
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Initialize logging to file
+/// Logs are written to: %APPDATA%/com.evolveapp.desktop/logs/ (Windows)
+///                      ~/Library/Application Support/com.evolveapp.desktop/logs/ (macOS)
+///                      ~/.local/share/com.evolveapp.desktop/logs/ (Linux)
+fn init_logging() {
+    // Get app data directory for logs
+    let app_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap())
+        .join("com.evolveapp.desktop");
+
+    let log_dir = app_dir.join("logs");
+
+    // Create log directory if it doesn't exist
+    if let Err(e) = fs::create_dir_all(&log_dir) {
+        eprintln!("Failed to create log directory: {}", e);
+        return;
+    }
+
+    // Create file appender for daily log rotation
+    let file_appender = tracing_appender::rolling::daily(log_dir.clone(), "evolveapp.log");
+
+    // Create console writer for stdout
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    // Build logging layers
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_line_number(true);
+
+    let stdout_layer = tracing_subscriber::fmt::layer()
+        .with_target(false);
+
+    // Initialize subscriber with both file and console output
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,tauri=debug,evolve_desktop=debug".into())
+        )
+        .with(file_layer)
+        .with(stdout_layer)
+        .init();
+
+    // CRITICAL: Keep the guard alive for the entire program
+    // Leaking it prevents the logging thread from being shut down
+    std::mem::forget(guard);
+
+    // Log the log file location
+    tracing::info!("Logs directory: {}", log_dir.display());
 }

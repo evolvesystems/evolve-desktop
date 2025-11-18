@@ -10,6 +10,21 @@ on:
         description: 'Release version (e.g., 1.0.5)'
         required: true
         type: string
+      release_notes:
+        description: 'Release notes'
+        required: false
+        type: string
+        default: ''
+      is_stable:
+        description: 'Mark as stable release'
+        required: false
+        type: string
+        default: 'true'
+      is_latest:
+        description: 'Mark as latest release'
+        required: false
+        type: string
+        default: 'true'
 
 jobs:
   build:
@@ -21,10 +36,12 @@ jobs:
             rust_target: x86_64-unknown-linux-gnu
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
-          - os: macos-latest
-            rust_target: x86_64-apple-darwin
-          - os: macos-latest
-            rust_target: aarch64-apple-darwin
+          # macOS builds disabled to save GitHub Actions minutes (10x cost)
+          # Re-enable when app is production-ready
+          # - os: macos-latest
+          #   rust_target: x86_64-apple-darwin
+          # - os: macos-latest
+          #   rust_target: aarch64-apple-darwin
 
     runs-on: ${{ matrix.platform.os }}
 
@@ -90,6 +107,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
 
     steps:
       - name: Download all artifacts
@@ -103,10 +122,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.version || github.ref_name }}
-          name: Release ${{ github.event.inputs.version || github.ref_name }}
+          tag_name: v${{ github.event.inputs.version || github.ref_name }}
+          name: Release v${{ github.event.inputs.version || github.ref_name }}
+          body: ${{ github.event.inputs.release_notes || 'No release notes provided' }}
           draft: false
-          prerelease: false
+          prerelease: ${{ github.event.inputs.is_stable != 'true' }}
           files: |
             artifacts/**/*.deb
             artifacts/**/*.AppImage
