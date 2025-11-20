@@ -10,6 +10,11 @@ on:
         description: 'Release version (e.g., 1.0.5)'
         required: true
         type: string
+      platforms:
+        description: 'Platforms to build (comma-separated: windows,linux,macos-intel,macos-arm)'
+        required: false
+        type: string
+        default: 'windows,linux,macos-intel,macos-arm'
       release_notes:
         description: 'Release notes'
         required: false
@@ -34,14 +39,22 @@ jobs:
         platform:
           - os: ubuntu-22.04
             rust_target: x86_64-unknown-linux-gnu
+            name: linux
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
+            name: windows
           - os: macos-latest
             rust_target: x86_64-apple-darwin
+            name: macos-intel
           - os: macos-latest
             rust_target: aarch64-apple-darwin
+            name: macos-arm
 
     runs-on: ${{ matrix.platform.os }}
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.inputs.platforms, matrix.platform.name) ||
+      github.event.inputs.platforms == ''
 
     steps:
       - name: Checkout repository
