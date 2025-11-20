@@ -6,23 +6,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
-    redirect: () => {
-      // Check if API is configured
-      const apiConfigured = localStorage.getItem('api_configured')
-      if (!apiConfigured) {
-        return '/welcome'
-      }
-      return '/dashboard'
-    },
-  },
-  {
-    path: '/welcome',
-    name: 'welcome',
-    component: () => import('@/views/Welcome.vue'),
-    meta: {
-      requiresAuth: false,
-      layout: 'auth',
-    },
+    redirect: '/dashboard',
   },
   {
     path: '/login',
@@ -84,13 +68,6 @@ const router = createRouter({
 // Navigation guards
 router.beforeEach((to, from, next) => {
   const authStore = useAuthStore()
-  const apiConfigured = localStorage.getItem('api_configured')
-
-  // If API not configured and not going to welcome page, redirect to welcome
-  if (!apiConfigured && to.name !== 'welcome') {
-    next({ name: 'welcome' })
-    return
-  }
 
   // Check if route requires authentication
   if (to.meta.requiresAuth !== false && !authStore.isAuthenticated) {
@@ -102,8 +79,8 @@ router.beforeEach((to, from, next) => {
     return
   }
 
-  // Redirect to dashboard if already authenticated and trying to access login/welcome
-  if ((to.name === 'login' || to.name === 'welcome') && authStore.isAuthenticated) {
+  // Redirect to dashboard if already authenticated and trying to access login
+  if (to.name === 'login' && authStore.isAuthenticated) {
     next({ name: 'dashboard' })
     return
   }

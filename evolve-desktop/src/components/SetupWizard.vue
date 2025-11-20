@@ -58,8 +58,8 @@
           <p class="hint">You can enter a server URL manually below</p>
         </div>
 
-        <button @click="currentStep = 'manual'" class="btn-secondary">
-          Enter URL Manually
+        <button @click="skipToManual" class="btn-secondary">
+          {{ isScanning ? 'Skip & Enter Manually' : 'Enter URL Manually' }}
         </button>
 
         <button
@@ -190,29 +190,10 @@ const presetServers = [
   { name: 'Local Network', url: 'http://192.168.1.100:8547' },
 ]
 
-// Build smart scan targets based on current host
+// Build scan targets - only production server
 function buildScanTargets(): string[] {
-  const currentHost = window.location.hostname
-  const targets: string[] = [productionUrl, localUrl]
-
-  // Add current host with port 8547 if not localhost
-  if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
-    const protocol = window.location.protocol
-    targets.unshift(`${protocol}//${currentHost}:8547`) // Add at beginning for priority
-    console.log(`[SetupWizard] Auto-detected network host: ${currentHost}:8547`)
-  }
-
-  // Add common fallbacks
-  targets.push(
-    'http://localhost:8000',
-    'http://127.0.0.1:8547',
-    'http://127.0.0.1:8000',
-    'http://192.168.1.1:8547',
-    'http://192.168.1.100:8547',
-    'http://10.0.0.1:8547'
-  )
-
-  return targets
+  console.log(`[SetupWizard] Searching for production server only: ${productionUrl}`)
+  return [productionUrl]
 }
 
 const scanTargets = buildScanTargets()
@@ -253,7 +234,7 @@ async function discoverServers() {
       console.log(`[SetupWizard] Testing server: ${targetUrl}`)
 
       const response = await axios.get(`${targetUrl}/api/health`, {
-        timeout: 2000,
+        timeout: 10000, // 10 seconds for production server over internet
         headers: {
           'Accept': 'application/json'
         }
@@ -263,13 +244,22 @@ async function discoverServers() {
 
       if (response.status === 200) {
         console.log(`[SetupWizard] ✓ Server found: ${targetUrl}`, response.data)
-        discoveredServers.value.push({
-          url: targetUrl,
-          name: response.data?.name || 'EvolveApp Server',
-          status: 'online',
-          version: response.data?.version,
-          responseTime
-        })
+
+        // Deduplicate - don't add if we already found this server
+        const exists = discoveredServers.value.some(s =>
+          s.name === (response.data?.name || 'EvolveApp Server') &&
+          s.version === response.data?.version
+        )
+
+        if (!exists) {
+          discoveredServers.value.push({
+            url: targetUrl,
+            name: response.data?.name || 'EvolveApp Server',
+            status: 'online',
+            version: response.data?.version,
+            responseTime
+          })
+        }
       }
     } catch (error: any) {
       console.log(`[SetupWizard] ✗ Server not available: ${targetUrl}`, error.message)
@@ -310,7 +300,9 @@ async function testAndConnect() {
   isConnecting.value = true
 
   try {
-    const response = await axios.get(`${selectedServer.value.url}/api/health`)
+    const response = await axios.get(`${selectedServer.value.url}/api/health`, {
+      timeout: 10000
+    })
 
     if (response.status === 200) {
       connectedServerName.value = selectedServer.value.name
@@ -339,6 +331,9 @@ async function testManualUrl() {
     return
   }
 
+  // Trim whitespace
+  manualUrl.value = manualUrl.value.trim()
+
   // Basic URL validation
   try {
     new URL(manualUrl.value)
@@ -351,8 +346,9 @@ async function testManualUrl() {
   urlError.value = ''
 
   try {
-    const response = await axios.get(`${manualUrl.value}/api/health`, {
-      timeout: 5000
+    // Create axios instance without baseURL to avoid conflicts
+    const response = await axios.create().get(`${manualUrl.value}/api/health`, {
+      timeout: 10000
     })
 
     if (response.status === 200) {
@@ -380,6 +376,11 @@ async function testManualUrl() {
   } finally {
     isConnecting.value = false
   }
+}
+
+function skipToManual() {
+  isScanning.value = false
+  currentStep.value = 'manual'
 }
 
 function finishSetup() {
