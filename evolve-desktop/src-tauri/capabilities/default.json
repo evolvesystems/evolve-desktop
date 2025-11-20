@@ -35,6 +35,7 @@
     "fs:allow-exists",
     "http:default",
     "notification:default",
-    "store:default"
+    "store:default",
+    "updater:default"
   ]
 }

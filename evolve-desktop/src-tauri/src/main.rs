@@ -107,10 +107,9 @@ fn main() {
                 }
             });
 
-            // TODO: Re-implement updater for Tauri 2.0 (API changed)
-            // The UpdaterExt trait and updater_builder() don't exist in Tauri 2.0
-            // Need to use the new updater API when available
-            tracing::info!("Auto-update temporarily disabled (needs Tauri 2.0 API update)");
+            // Auto-update is handled on the frontend with @tauri-apps/plugin-updater
+            // Check SetupWizard.vue and App.vue for update checking logic
+            tracing::info!("Auto-update is configured and ready (frontend-based)");
 
             tracing::info!("Setup completed successfully");
 
