@@ -79,28 +79,35 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function logout() {
+    console.log('[AuthStore] Logout started')
     try {
       // Call logout endpoint if authenticated
       if (tokens.value?.accessToken) {
+        console.log('[AuthStore] Calling logout API endpoint...')
         await axios.post('/api/v1/auth/logout')
+        console.log('[AuthStore] Logout API call successful')
       }
     } catch (err) {
-      console.error('Logout error:', err)
+      console.error('[AuthStore] Logout API error:', err)
     }
 
     // Clear state
+    console.log('[AuthStore] Clearing auth state...')
     user.value = null
     tokens.value = null
     error.value = null
 
     // Clear localStorage
     clearAuth()
+    console.log('[AuthStore] localStorage cleared')
 
     // Clear auth header
     delete axios.defaults.headers.common['Authorization']
+    console.log('[AuthStore] Auth header cleared')
 
     // Emit event
     eventBus.emit(EVENTS.USER_LOGGED_OUT)
+    console.log('[AuthStore] Logout complete')
   }
 
   async function refreshToken() {

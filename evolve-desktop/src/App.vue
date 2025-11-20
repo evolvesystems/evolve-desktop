@@ -1,19 +1,48 @@
 <template>
   <SetupWizard v-if="!setupCompleted" />
-  <component v-else :is="layout">
+  <AppLayout v-else-if="route.meta.layout !== 'auth'">
     <router-view />
-  </component>
+  </AppLayout>
+  <router-view v-else />
+
+  <!-- Session Expired Modal -->
+  <div v-if="showSessionExpired" class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Session Expired</h3>
+      <p class="py-4">Your session has expired. Please log in again to continue.</p>
+      <div class="modal-action">
+        <button @click="handleRelogin" class="btn btn-primary">Log In Again</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
-import MainLayout from '@/layouts/MainLayout.vue'
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import AppLayout from '@/layouts/AppLayout.vue'
 import SetupWizard from '@/components/SetupWizard.vue'
 import axios from 'axios'
+import { eventBus, EVENTS } from '@/core/event-bus'
 
 const route = useRoute()
+const router = useRouter()
 const setupCompleted = ref(false)
+const showSessionExpired = ref(false)
+
+// Listen for logout events
+eventBus.on(EVENTS.USER_LOGGED_OUT, () => {
+  showSessionExpired.value = true
+})
+
+function handleRelogin() {
+  showSessionExpired.value = false
+  // Clear any stale data
+  localStorage.removeItem('user')
+  localStorage.removeItem('tokens')
+  // Force hard redirect to login
+  window.location.href = '/login'
+}
 
 onMounted(async () => {
   console.log('[App.vue] Checking setup status...')
@@ -26,7 +55,7 @@ onMounted(async () => {
 
   // If no setup completed, try production server first
   if (completed !== 'true' || !apiUrl) {
-    const productionUrl = 'https://evolvepreneuriq.app'
+    const productionUrl = import.meta.env.VITE_PRODUCTION_URL || 'https://evolvepreneuriq.app'
 
     console.log('[App.vue] No setup found, testing production server:', productionUrl)
 
@@ -60,16 +89,6 @@ onMounted(async () => {
 
   setupCompleted.value = completed === 'true' && !!apiUrl
   console.log('[App.vue] Final setup status:', setupCompleted.value)
-})
-
-const layout = computed(() => {
-  // Use different layouts based on route meta
-  if (route.meta.layout === 'auth') {
-    // For auth pages, just render the content without layout
-    return 'div'
-  }
-
-  return MainLayout
 })
 </script>
 

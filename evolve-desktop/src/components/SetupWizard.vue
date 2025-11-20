@@ -143,7 +143,19 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import axios from 'axios'
-import { invoke } from '@tauri-apps/api/core'
+
+// Check if running in Tauri or browser
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
+
+// Dynamically import Tauri API only if in Tauri environment
+let invoke: any = null
+if (isTauri) {
+  import('@tauri-apps/api/core').then(module => {
+    invoke = module.invoke
+  }).catch(() => {
+    console.log('[SetupWizard] Running in browser mode (Tauri API not available)')
+  })
+}
 
 interface Server {
   url: string
@@ -168,35 +180,61 @@ const connectedServerName = ref('')
 const finalServerUrl = ref('')
 
 // Preset server configurations
+const productionUrl = import.meta.env.VITE_PRODUCTION_URL || 'https://evolvepreneuriq.app'
+const localUrl = import.meta.env.VITE_API_URL || 'http://localhost:8547'
+
 const presetServers = [
-  { name: 'Production Server', url: 'https://evolvepreneuriq.app' },
-  { name: 'Local Development', url: 'http://localhost:8547' },
+  { name: 'Production Server', url: productionUrl },
+  { name: 'Local Development', url: localUrl },
   { name: 'Local Development (Alt)', url: 'http://localhost:8000' },
   { name: 'Local Network', url: 'http://192.168.1.100:8547' },
 ]
 
-// Common ports and paths to check
-const scanTargets = [
-  'https://evolvepreneuriq.app',
-  'http://localhost:8547',
-  'http://localhost:8000',
-  'http://127.0.0.1:8547',
-  'http://127.0.0.1:8000',
-  'http://192.168.1.1:8547',
-  'http://192.168.1.100:8547',
-  'http://10.0.0.1:8547',
-]
+// Build smart scan targets based on current host
+function buildScanTargets(): string[] {
+  const currentHost = window.location.hostname
+  const targets: string[] = [productionUrl, localUrl]
+
+  // Add current host with port 8547 if not localhost
+  if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
+    const protocol = window.location.protocol
+    targets.unshift(`${protocol}//${currentHost}:8547`) // Add at beginning for priority
+    console.log(`[SetupWizard] Auto-detected network host: ${currentHost}:8547`)
+  }
+
+  // Add common fallbacks
+  targets.push(
+    'http://localhost:8000',
+    'http://127.0.0.1:8547',
+    'http://127.0.0.1:8000',
+    'http://192.168.1.1:8547',
+    'http://192.168.1.100:8547',
+    'http://10.0.0.1:8547'
+  )
+
+  return targets
+}
+
+const scanTargets = buildScanTargets()
 
 const appVersion = ref('')
 
 onMounted(async () => {
-  // Get app version from Tauri backend
-  try {
-    appVersion.value = await invoke<string>('get_app_version')
-  } catch (e) {
-    appVersion.value = '1.0.10'
+  console.log('[SetupWizard] Component mounted, isTauri:', isTauri)
+
+  // Get app version from Tauri backend or fallback
+  if (isTauri && invoke) {
+    try {
+      appVersion.value = await invoke<string>('get_app_version')
+    } catch (e) {
+      appVersion.value = '1.0.10'
+    }
+  } else {
+    // Browser mode - use env var or default
+    appVersion.value = import.meta.env.VITE_APP_VERSION || '1.0.10'
   }
 
+  console.log('[SetupWizard] Starting server discovery...')
   discoverServers()
 })
 
@@ -212,6 +250,8 @@ async function discoverServers() {
 
     try {
       const startTime = Date.now()
+      console.log(`[SetupWizard] Testing server: ${targetUrl}`)
+
       const response = await axios.get(`${targetUrl}/api/health`, {
         timeout: 2000,
         headers: {
@@ -222,6 +262,7 @@ async function discoverServers() {
       const responseTime = Date.now() - startTime
 
       if (response.status === 200) {
+        console.log(`[SetupWizard] ✓ Server found: ${targetUrl}`, response.data)
         discoveredServers.value.push({
           url: targetUrl,
           name: response.data?.name || 'EvolveApp Server',
@@ -230,8 +271,8 @@ async function discoverServers() {
           responseTime
         })
       }
-    } catch (error) {
-      // Server not found or not responding, skip
+    } catch (error: any) {
+      console.log(`[SetupWizard] ✗ Server not available: ${targetUrl}`, error.message)
     }
 
     checked++

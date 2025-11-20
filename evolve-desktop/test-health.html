@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Health Check Test</title>
+</head>
+<body>
+    <h1>Testing Health Endpoint</h1>
+    <div id="result"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        const resultDiv = document.getElementById('result');
+
+        console.log('Starting health check test...');
+        resultDiv.innerHTML = 'Testing...';
+
+        axios.get('http://localhost:8547/api/health', {
+            timeout: 2000,
+            headers: {
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => {
+            console.log('Success:', response.data);
+            resultDiv.innerHTML = `
+                <h2 style="color: green">✓ Success!</h2>
+                <pre>${JSON.stringify(response.data, null, 2)}</pre>
+            `;
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            resultDiv.innerHTML = `
+                <h2 style="color: red">✗ Failed</h2>
+                <p><strong>Error:</strong> ${error.message}</p>
+                <p><strong>Details:</strong> ${error.response ? JSON.stringify(error.response.data) : 'Network error'}</p>
+            `;
+        });
+    </script>
+</body>
+</html>

@@ -18,7 +18,7 @@ const metadata: ModuleMetadata = {
   name: 'Email',
   version: '1.0.0',
   description: 'Full-featured email client with IMAP/SMTP support',
-  icon: 'mail',
+  icon: '📧',
   category: 'communication'
 }
 

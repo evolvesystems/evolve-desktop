@@ -39,6 +39,25 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Dashboard.vue'),
     meta: {
       requiresAuth: true,
+      title: 'dashboard',
+    },
+  },
+  {
+    path: '/email',
+    name: 'email',
+    component: () => import('@/modules/email/views/EmailView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'email',
+    },
+  },
+  {
+    path: '/chat',
+    name: 'chat',
+    component: () => import('@/views/ChatView.vue'),
+    meta: {
+      requiresAuth: true,
+      title: 'chat',
     },
   },
   {
@@ -47,6 +66,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Settings.vue'),
     meta: {
       requiresAuth: true,
+      title: 'settings',
     },
   },
   {
