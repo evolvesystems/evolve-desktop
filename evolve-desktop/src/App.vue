@@ -48,6 +48,7 @@ import axios from 'axios'
 import { eventBus, EVENTS } from '@/core/event-bus'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,17 +90,21 @@ onMounted(async () => {
     console.log('[App.vue] No setup found, testing production server:', productionUrl)
 
     try {
-      // Test production server
-      const response = await axios.get(`${productionUrl}/api/health`, {
-        timeout: 5000
+      // Test production server using Tauri HTTP plugin (bypasses CORS)
+      const response = await tauriFetch(`${productionUrl}/api/health`, {
+        method: 'GET',
+        connectTimeout: 5000
       })
 
-      console.log('[App.vue] Production server response:', response.status, response.data)
+      console.log('[App.vue] Production server response:', response.status)
 
-      if (response.status === 200) {
+      if (response.ok) {
+        const data = await response.json()
+        console.log('[App.vue] Production server data:', data)
+
         // Auto-configure with production server
         localStorage.setItem('api_url', productionUrl)
-        localStorage.setItem('server_name', response.data?.name || 'EvolveApp Production Server')
+        localStorage.setItem('server_name', data?.name || 'EvolveApp Production Server')
         localStorage.setItem('setup_completed', 'true')
 
         // Update axios base URL
