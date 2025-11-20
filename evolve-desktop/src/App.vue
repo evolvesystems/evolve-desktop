@@ -48,7 +48,6 @@ import axios from 'axios'
 import { eventBus, EVENTS } from '@/core/event-bus'
 import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 
 const route = useRoute()
 const router = useRouter()
@@ -90,16 +89,37 @@ onMounted(async () => {
     console.log('[App.vue] No setup found, testing production server:', productionUrl)
 
     try {
-      // Test production server using Tauri HTTP plugin (bypasses CORS)
-      const response = await tauriFetch(`${productionUrl}/api/health`, {
-        method: 'GET',
-        connectTimeout: 5000
-      })
+      // Test production server - use Tauri HTTP in desktop, axios in browser
+      let response, data
 
-      console.log('[App.vue] Production server response:', response.status)
+      // Check if running in Tauri
+      if (window.__TAURI__) {
+        // Use Tauri HTTP plugin (bypasses CORS in desktop app)
+        const { fetch: tauriFetch } = await import('@tauri-apps/plugin-http')
+        response = await tauriFetch(`${productionUrl}/api/health`, {
+          method: 'GET',
+          connectTimeout: 5000
+        })
 
-      if (response.ok) {
-        const data = await response.json()
+        console.log('[App.vue] Production server response (Tauri):', response.status)
+
+        if (response.ok) {
+          data = await response.json()
+        }
+      } else {
+        // Use axios in browser (for dev mode)
+        response = await axios.get(`${productionUrl}/api/health`, {
+          timeout: 5000
+        })
+
+        console.log('[App.vue] Production server response (Browser):', response.status)
+
+        if (response.status === 200) {
+          data = response.data
+        }
+      }
+
+      if (data) {
         console.log('[App.vue] Production server data:', data)
 
         // Auto-configure with production server
