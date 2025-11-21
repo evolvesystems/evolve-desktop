@@ -100,9 +100,6 @@ jobs:
         if: steps.should_build.outputs.build == 'true'
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts (Linux)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
