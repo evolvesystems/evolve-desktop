@@ -12,7 +12,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -70,7 +70,7 @@
       "endpoints": [
         "https://evolvepreneuriq.app/api/v1/desktop/updates/{{target}}/{{current_version}}"
       ],
-      "pubkey": "",
+      "pubkey": "rO8dV5EI56YoWndBS+cizhNh07Ci+WmIFjbCv/4xJ9E=",
       "windows": {
         "installMode": "passive"
       }
