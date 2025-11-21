@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Connection Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.2/dist/axios.min.js"></script>
+</head>
+<body>
+  <h1>Testing Connection to Production Server</h1>
+  <div id="results"></div>
+
+  <script>
+    const results = document.getElementById('results');
+    const productionUrl = 'https://evolvepreneuriq.app';
+
+    results.innerHTML = '<p>Testing connection to ' + productionUrl + '...</p>';
+
+    axios.get(productionUrl + '/api/health', {
+      timeout: 10000,
+      headers: {
+        'Accept': 'application/json'
+      }
+    })
+    .then(response => {
+      results.innerHTML += '<p style="color: green">✓ SUCCESS! Status: ' + response.status + '</p>';
+      results.innerHTML += '<pre>' + JSON.stringify(response.data, null, 2) + '</pre>';
+      results.innerHTML += '<p>CORS headers received:</p>';
+      results.innerHTML += '<pre>' + JSON.stringify(response.headers, null, 2) + '</pre>';
+    })
+    .catch(error => {
+      results.innerHTML += '<p style="color: red">✗ FAILED</p>';
+      results.innerHTML += '<p>Error: ' + error.message + '</p>';
+      if (error.response) {
+        results.innerHTML += '<p>Response status: ' + error.response.status + '</p>';
+        results.innerHTML += '<pre>' + JSON.stringify(error.response.data, null, 2) + '</pre>';
+      } else if (error.request) {
+        results.innerHTML += '<p>No response received from server</p>';
+        results.innerHTML += '<p>This usually means:</p>';
+        results.innerHTML += '<ul><li>CORS error</li><li>Network error</li><li>Timeout</li></ul>';
+      }
+      results.innerHTML += '<p>Check browser console (F12) for more details</p>';
+      console.error('Full error:', error);
+    });
+  </script>
+</body>
+</html>
