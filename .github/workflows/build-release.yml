@@ -96,28 +96,12 @@ jobs:
         working-directory: evolve-desktop
         run: npm ci
 
-      - name: Prepare signing key (Windows)
-        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'windows-latest'
-        shell: bash
-        run: |
-          # Extract only the base64 line (second line) for Windows to avoid CRLF issues
-          KEY_BASE64=$(echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" | tail -n 1)
-          echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_BASE64" >> $GITHUB_ENV
-
-      - name: Prepare signing key (Linux/macOS)
-        if: steps.should_build.outputs.build == 'true' && matrix.platform.os != 'windows-latest'
-        shell: bash
-        run: |
-          # Use full key content for Linux/macOS - use multiline EOF syntax
-          echo 'TAURI_SIGNING_PRIVATE_KEY<<EOF' >> $GITHUB_ENV
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
-
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
         env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts (Linux)
