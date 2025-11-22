@@ -96,12 +96,33 @@ jobs:
         working-directory: evolve-desktop
         run: npm ci
 
-      - name: Prepare Tauri signing key
+      - name: Prepare Tauri signing key (sanitized)
         if: steps.should_build.outputs.build == 'true'
         shell: bash
         run: |
-          # Tauri accepts just the base64 key without the comment line
-          echo "TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" >> $GITHUB_ENV
+          set -euo pipefail
+          key_raw="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+
+          # Tauri minisign format: comment line + base64 key line
+          # Extract only the base64 key line (skip the "untrusted comment" line)
+          if printf '%s\n' "$key_raw" | grep -q "untrusted comment"; then
+            # Extract the second line (the base64 key)
+            key_clean=$(printf '%s\n' "$key_raw" | sed -n '2p' | tr -d '[:space:]')
+          else
+            # Otherwise remove all whitespace (spaces/newlines/tabs)
+            key_clean=$(printf '%s\n' "$key_raw" | tr -d '[:space:]')
+          fi
+
+          # Basic validation: ensure only base64 chars are present
+          if ! printf '%s\n' "$key_clean" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
+            echo "TAURI_SIGNING_PRIVATE_KEY seems to contain invalid characters after sanitizing" >&2
+            exit 1
+          fi
+
+          # Export sanitized key
+          echo "TAURI_SIGNING_PRIVATE_KEY=$key_clean" >> $GITHUB_ENV
+          # Do not print the key; print only its length for verification
+          echo "TAURI_SIGNING_PRIVATE_KEY length: ${#key_clean}" >&2
           echo "Signing key configured"
 
       - name: Build Tauri app
