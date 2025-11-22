@@ -100,12 +100,9 @@ jobs:
         if: steps.should_build.outputs.build == 'true'
         shell: bash
         run: |
-          # Decode base64 key and set as multiline env var using GitHub Actions EOF syntax
-          KEY_CONTENT=$(echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -d)
-          echo "TAURI_SIGNING_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-          echo "$KEY_CONTENT" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          echo "Signing key set in environment variable"
+          # Tauri accepts just the base64 key without the comment line
+          echo "TAURI_SIGNING_PRIVATE_KEY=${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" >> $GITHUB_ENV
+          echo "Signing key configured"
 
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
