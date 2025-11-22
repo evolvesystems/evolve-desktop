@@ -96,39 +96,32 @@ jobs:
         working-directory: evolve-desktop
         run: npm ci
 
-      - name: Prepare Tauri signing key (sanitized)
+      - name: Prepare Tauri signing key
         if: steps.should_build.outputs.build == 'true'
         shell: bash
         run: |
-          set -euo pipefail
-          key_raw="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+          # Create .tauri directory in home
+          mkdir -p ~/.tauri
 
-          # Tauri minisign format: comment line + base64 key line
-          # Extract only the base64 key line (skip the "untrusted comment" line)
-          if printf '%s\n' "$key_raw" | grep -q "untrusted comment"; then
-            # Extract the second line (the base64 key)
-            key_clean=$(printf '%s\n' "$key_raw" | sed -n '2p' | tr -d '[:space:]')
-          else
-            # Otherwise remove all whitespace (spaces/newlines/tabs)
-            key_clean=$(printf '%s\n' "$key_raw" | tr -d '[:space:]')
-          fi
+          # Write the signing key to file (preserves exact format from secret)
+          cat > ~/.tauri/evolveapp.key << 'EOF'
+          ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          EOF
 
-          # Basic validation: ensure only base64 chars are present
-          if ! printf '%s\n' "$key_clean" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
-            echo "TAURI_SIGNING_PRIVATE_KEY seems to contain invalid characters after sanitizing" >&2
-            exit 1
-          fi
+          # Set restrictive permissions
+          chmod 600 ~/.tauri/evolveapp.key
 
-          # Export sanitized key
-          echo "TAURI_SIGNING_PRIVATE_KEY=$key_clean" >> $GITHUB_ENV
-          # Do not print the key; print only its length for verification
-          echo "TAURI_SIGNING_PRIVATE_KEY length: ${#key_clean}" >&2
-          echo "Signing key configured"
+          # Verify file was created and show its size (not content)
+          echo "Signing key file created: $(wc -c < ~/.tauri/evolveapp.key) bytes"
+          echo "Expected: 136 bytes (untrusted comment line + base64 key line)"
 
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_PATH: ~/.tauri/evolveapp.key
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts (Linux)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
