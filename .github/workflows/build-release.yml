@@ -100,11 +100,12 @@ jobs:
         if: steps.should_build.outputs.build == 'true'
         shell: bash
         run: |
-          mkdir -p $HOME/.tauri
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -d > $HOME/.tauri/evolveapp.key
-          chmod 600 $HOME/.tauri/evolveapp.key
-          echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$HOME/.tauri/evolveapp.key" >> $GITHUB_ENV
-          echo "Key file created and env var set"
+          # Decode base64 key and set as multiline env var using GitHub Actions EOF syntax
+          KEY_CONTENT=$(echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -d)
+          echo "TAURI_SIGNING_PRIVATE_KEY<<EOF" >> $GITHUB_ENV
+          echo "$KEY_CONTENT" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+          echo "Signing key set in environment variable"
 
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
