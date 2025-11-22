@@ -103,14 +103,13 @@ jobs:
           mkdir -p $HOME/.tauri
           echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_BASE64 }}" | base64 -d > $HOME/.tauri/evolveapp.key
           chmod 600 $HOME/.tauri/evolveapp.key
-          echo "Key file created at: $HOME/.tauri/evolveapp.key"
+          echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$HOME/.tauri/evolveapp.key" >> $GITHUB_ENV
+          echo "Key file created and env var set"
 
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
-        env:
-          TAURI_SIGNING_PRIVATE_KEY_PATH: ${{ runner.os == 'Windows' && '$HOME/.tauri/evolveapp.key' || '$HOME/.tauri/evolveapp.key' }}
 
       - name: Upload artifacts (Linux)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
