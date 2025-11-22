@@ -146,6 +146,39 @@ tauri::Builder::default()
     // etc...
 ```
 
+## Known Issues
+
+### Linux AppImage: WebKit Injected Bundle Warning
+
+**Status:** Known Tauri bug, harmless warning
+
+**Error Message:**
+```
+(WebKitWebProcess:XXXXX): WARNING **: Error loading the injected bundle
+(././/lib/x86_64-linux-gnu/webkit2gtk-4.1/injected-bundle/libwebkit2gtkinjectedbundle.so):
+cannot open shared object file: No such file or directory
+```
+
+**Impact:** ⚠️ **HARMLESS** - App functions normally despite the warning
+
+**Root Cause:** Tauri AppImage bundler doesn't include webkit's injected-bundle library and generates malformed path with `././/` instead of `./`
+
+**Status in Tauri:**
+- Fixed in PR #12466 (merged January 21, 2025)
+- Not yet released (as of v2.9.3)
+- Will be in next Tauri version after 2.9.3
+
+**Workaround Attempts:**
+- ❌ Manual bundling via `appimage.files` config doesn't work (file doesn't exist on build system)
+- ✅ Use `.deb` installer instead of AppImage (doesn't have this issue)
+- ✅ Ignore the warning (confirmed safe by Tauri devs in PR #2940)
+
+**Recommendation:** Wait for next Tauri release with PR #12466, or use .deb packages for Linux distribution.
+
+**References:**
+- Tauri Issue: https://github.com/tauri-apps/tauri/issues/12463
+- Fix PR: https://github.com/tauri-apps/tauri/pull/12466
+
 ## Rust Backend Architecture
 
 ### Key Files
