@@ -1,6 +1,6 @@
 [package]
 name = "evolve-desktop"
-version = "1.0.29"
+version = "1.0.30"
 description = "EvolveApp - Modular Business Management Desktop Application"
 authors = ["EvolveApp Team"]
 edition = "2021"
