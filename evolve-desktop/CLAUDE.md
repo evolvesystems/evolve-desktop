@@ -71,6 +71,33 @@ xcopy \\wsl$\... C:\evolve-desktop /E /I /H
 
 ## GitHub Actions CI/CD
 
+### **🚨 CRITICAL: Dual Remote Setup**
+
+**This repository has TWO git remotes:**
+- **origin** → GitLab (`git@gitlab.evolvepreneur.app:symfony-dev/evolveapp.git`)
+- **github** → GitHub (`https://github.com/evolvesystems/evolve-desktop.git`)
+
+**IMPORTANT**: GitHub Actions builds from the **github** remote, NOT origin!
+
+**After making changes, you MUST push to BOTH remotes:**
+```bash
+git push origin master   # Push to GitLab (backup/primary repo)
+git push github master   # Push to GitHub (for Actions builds)
+```
+
+**Common mistake**: If you only `git push`, it goes to `origin` (GitLab). GitHub Actions will build OLD code because it's not on GitHub yet!
+
+**Verification**: Check GitHub has your latest changes:
+```bash
+# Check local version
+grep '"version"' package.json
+
+# Check GitHub version (should match)
+curl -s https://raw.githubusercontent.com/evolvesystems/evolve-desktop/master/evolve-desktop/package.json | grep '"version"'
+```
+
+### Build Triggering
+
 Builds are triggered via EIQ Manager admin panel:
 - URL: `http://localhost:8547/admin/build-release/trigger`
 - Enter version (e.g., 1.0.8) and click "Deploy to GitHub"
