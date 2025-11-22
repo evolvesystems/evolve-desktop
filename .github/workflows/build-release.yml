@@ -96,31 +96,12 @@ jobs:
         working-directory: evolve-desktop
         run: npm ci
 
-      - name: Prepare Tauri signing key
-        if: steps.should_build.outputs.build == 'true'
-        shell: bash
-        run: |
-          # Create .tauri directory in home
-          mkdir -p ~/.tauri
-
-          # Write the signing key to file (preserves exact format from secret)
-          cat > ~/.tauri/evolveapp.key << 'EOF'
-          ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          EOF
-
-          # Set restrictive permissions
-          chmod 600 ~/.tauri/evolveapp.key
-
-          # Verify file was created and show its size (not content)
-          echo "Signing key file created: $(wc -c < ~/.tauri/evolveapp.key) bytes"
-          echo "Expected: 136 bytes (untrusted comment line + base64 key line)"
-
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
         env:
-          TAURI_SIGNING_PRIVATE_KEY_PATH: ~/.tauri/evolveapp.key
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts (Linux)
