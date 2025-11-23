@@ -101,7 +101,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p ${{ github.workspace }}/../.tauri
-          printf '%s\n' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > ${{ github.workspace }}/../.tauri/evolveapp.key
+          printf '%s' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > ${{ github.workspace }}/../.tauri/evolveapp.key
           chmod 600 ${{ github.workspace }}/../.tauri/evolveapp.key
 
       - name: Build Tauri app
