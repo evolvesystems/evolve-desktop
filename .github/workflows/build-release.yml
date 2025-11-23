@@ -100,16 +100,16 @@ jobs:
         if: steps.should_build.outputs.build == 'true'
         shell: bash
         run: |
-          mkdir -p ~/.tauri
-          printf '%s\n' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > ~/.tauri/evolveapp.key
-          chmod 600 ~/.tauri/evolveapp.key
+          mkdir -p ${{ github.workspace }}/../.tauri
+          printf '%s\n' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > ${{ github.workspace }}/../.tauri/evolveapp.key
+          chmod 600 ${{ github.workspace }}/../.tauri/evolveapp.key
 
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
         env:
-          TAURI_SIGNING_PRIVATE_KEY: $HOME/.tauri/evolveapp.key
+          TAURI_SIGNING_PRIVATE_KEY: ${{ github.workspace }}/../.tauri/evolveapp.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts (Linux)
