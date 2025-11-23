@@ -109,7 +109,7 @@ jobs:
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ github.workspace }}/../.tauri/evolveapp.key
+          TAURI_SIGNING_PRIVATE_KEY: $HOME/.tauri/evolveapp.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload artifacts (Linux)
