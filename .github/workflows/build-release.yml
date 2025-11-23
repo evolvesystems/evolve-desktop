@@ -12,9 +12,8 @@ on:
         type: string
       platforms:
         description: 'Platforms to build (comma-separated: windows,linux,macos-intel,macos-arm)'
-        required: false
+        required: true
         type: string
-        default: 'windows,linux,macos-intel,macos-arm'
       release_notes:
         description: 'Release notes'
         required: false
@@ -59,9 +58,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "push" ]; then
             echo "build=true" >> $GITHUB_OUTPUT
-          elif [ -z "${{ github.event.inputs.platforms }}" ]; then
-            echo "build=true" >> $GITHUB_OUTPUT
-          elif echo "${{ github.event.inputs.platforms }}" | grep -q "${{ matrix.platform.name }}"; then
+          elif echo "${{ github.event.inputs.platforms }}" | grep -qw "${{ matrix.platform.name }}"; then
             echo "build=true" >> $GITHUB_OUTPUT
           else
             echo "build=false" >> $GITHUB_OUTPUT
