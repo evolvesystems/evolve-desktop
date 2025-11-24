@@ -97,7 +97,7 @@ jobs:
         if: steps.should_build.outputs.build == 'true'
         run: |
           mkdir -p /tmp/.tauri
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_RAW }}" > /tmp/.tauri/key
+          printf '%s' "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_RAW }}" > /tmp/.tauri/key
           chmod 600 /tmp/.tauri/key
 
       - name: Build Tauri app
