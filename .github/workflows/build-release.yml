@@ -93,12 +93,18 @@ jobs:
         working-directory: evolve-desktop
         run: npm ci
 
+      - name: Prepare signing key
+        if: steps.should_build.outputs.build == 'true'
+        run: |
+          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" | base64 -d > ${{ runner.temp }}/tauri-signing-key.key
+          chmod 600 ${{ runner.temp }}/tauri-signing-key.key
+
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
         working-directory: evolve-desktop
         run: npm run tauri build -- --target ${{ matrix.platform.rust_target }}
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ runner.temp }}/tauri-signing-key.key
 
       - name: Upload artifacts (Linux)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
