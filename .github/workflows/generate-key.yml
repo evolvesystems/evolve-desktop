@@ -1,0 +1,33 @@
+name: Generate Signing Key
+
+on:
+  workflow_dispatch:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: evolve-desktop
+        run: npm ci
+
+      - name: Generate signing key
+        working-directory: evolve-desktop
+        run: |
+          echo "" | npm run tauri signer generate --ci
+          echo "=== Private Key ==="
+          cat ~/.tauri/*.key
+          echo ""
+          echo "=== Public Key ==="
+          cat ~/.tauri/*.pub
+          echo ""
+          echo "=== Base64 Private Key (for GitHub Secret) ==="
+          base64 -w 0 ~/.tauri/*.key
+          echo ""
