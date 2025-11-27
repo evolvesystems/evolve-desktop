@@ -21,7 +21,7 @@ jobs:
       - name: Generate signing key
         working-directory: evolve-desktop
         run: |
-          echo "" | npm run tauri signer generate --ci
+          echo "" | npm run tauri signer generate -- --ci
           echo "=== Private Key ==="
           cat ~/.tauri/*.key
           echo ""
