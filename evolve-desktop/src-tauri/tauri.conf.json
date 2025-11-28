@@ -73,7 +73,7 @@
       "endpoints": [
         "https://evolvepreneuriq.app/api/v1/desktop/updates/{{target}}/{{current_version}}"
       ],
-      "pubkey": "RWQ+YITHcd/MbJfbC8xwFFM1anLyK+QHfGox+vM5PE+EExbENzBIKmUm",
+      "pubkey": "RWSoJ/vwJRRpi9aP6at5ym59Z5fwbv1p0D4KuwUxAlas3Ryp6e13P1yl",
       "windows": {
         "installMode": "passive"
       }
