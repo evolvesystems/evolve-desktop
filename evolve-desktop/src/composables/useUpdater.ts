@@ -1,13 +1,30 @@
 import { ref, onMounted } from 'vue'
-import { check } from '@tauri-apps/plugin-updater'
 import { ask } from '@tauri-apps/plugin-dialog'
+import { open } from '@tauri-apps/plugin-shell'
+import { getVersion } from '@tauri-apps/api/app'
+import { platform } from '@tauri-apps/plugin-os'
+
+interface VersionInfo {
+  version: string
+  releaseNotes: string
+  releaseDate: string
+  downloadUrls: {
+    linux: {
+      appimage: string | null
+      deb: string | null
+      rpm: string | null
+    }
+    windows: string | null
+    macos: string | null
+  }
+}
 
 export function useUpdater() {
   const updateAvailable = ref(false)
   const updateVersion = ref('')
+  const updateNotes = ref('')
+  const downloadUrl = ref('')
   const checking = ref(false)
-  const downloading = ref(false)
-  const downloadProgress = ref(0)
 
   async function checkForUpdates(silent = false) {
     if (checking.value) return
@@ -15,15 +32,32 @@ export function useUpdater() {
     checking.value = true
 
     try {
-      const update = await check()
+      // Get current app version
+      const currentVersion = await getVersion()
 
-      if (update) {
+      // Check EIQ Manager API for latest version
+      const response = await fetch('https://evolvepreneuriq.app/api/v1/desktop/version')
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const data: VersionInfo = await response.json()
+
+      // Compare versions
+      if (compareVersions(data.version, currentVersion) > 0) {
+        // Update available
         updateAvailable.value = true
-        updateVersion.value = update.version
+        updateVersion.value = data.version
+        updateNotes.value = data.releaseNotes
+
+        // Get download URL for current platform
+        const currentPlatform = await platform()
+        downloadUrl.value = getDownloadUrl(currentPlatform, data.downloadUrls)
 
         if (!silent) {
           const yes = await ask(
-            `Update to version ${update.version} is available!\n\nRelease notes:\n${update.body || 'No release notes provided'}\n\nWould you like to install it now?`,
+            `Update to version ${data.version} is available!\n\nRelease notes:\n${data.releaseNotes}\n\nWould you like to download it now?`,
             {
               title: 'Update Available',
               kind: 'info',
@@ -31,7 +65,7 @@ export function useUpdater() {
           )
 
           if (yes) {
-            await downloadAndInstall(update)
+            await openDownloadPage()
           }
         }
       } else if (!silent) {
@@ -53,40 +87,40 @@ export function useUpdater() {
     }
   }
 
-  async function downloadAndInstall(update: any) {
-    downloading.value = true
-    downloadProgress.value = 0
-
-    try {
-      // Download and install the update
-      await update.downloadAndInstall((event: any) => {
-        switch (event.event) {
-          case 'Started':
-            downloadProgress.value = 0
-            break
-          case 'Progress':
-            downloadProgress.value = event.data.chunkLength
-            break
-          case 'Finished':
-            downloadProgress.value = 100
-            break
-        }
-      })
-
-      // App will restart automatically after update installs
-      await ask('Update installed successfully! The app will restart now.', {
-        title: 'Update Complete',
-        kind: 'info',
-      })
-    } catch (error) {
-      console.error('Failed to install update:', error)
-      await ask(`Failed to install update: ${error}`, {
-        title: 'Update Error',
-        kind: 'error',
-      })
-    } finally {
-      downloading.value = false
+  async function openDownloadPage() {
+    if (downloadUrl.value) {
+      await open(downloadUrl.value)
     }
+  }
+
+  function getDownloadUrl(platformName: string, urls: VersionInfo['downloadUrls']): string {
+    switch (platformName.toLowerCase()) {
+      case 'linux':
+        // Prefer AppImage, fallback to deb
+        return urls.linux.appimage || urls.linux.deb || urls.linux.rpm || ''
+      case 'windows':
+        return urls.windows || ''
+      case 'macos':
+      case 'darwin':
+        return urls.macos || ''
+      default:
+        return ''
+    }
+  }
+
+  function compareVersions(v1: string, v2: string): number {
+    const parts1 = v1.split('.').map(Number)
+    const parts2 = v2.split('.').map(Number)
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const part1 = parts1[i] || 0
+      const part2 = parts2[i] || 0
+
+      if (part1 > part2) return 1
+      if (part1 < part2) return -1
+    }
+
+    return 0
   }
 
   // Check for updates on mount (silent check)
@@ -100,9 +134,10 @@ export function useUpdater() {
   return {
     updateAvailable,
     updateVersion,
+    updateNotes,
+    downloadUrl,
     checking,
-    downloading,
-    downloadProgress,
     checkForUpdates,
+    openDownloadPage,
   }
 }
