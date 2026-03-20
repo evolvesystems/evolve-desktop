@@ -60,9 +60,5 @@
       "csp": null
     }
   },
-  "plugins": {
-    "notification": {
-      "all": true
-    }
-  }
+  "plugins": {}
 }
