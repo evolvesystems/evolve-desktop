@@ -1,7 +1,7 @@
 // EvolveApp Desktop — WebView wrapper for evolvepreneuriq.app
 //
-// Loads dist/index.html which contains a full-page iframe to the web app.
-// Desktop extras: system tray with quick links to key modules.
+// Loads the web app directly via the window "url" config in tauri.conf.json.
+// System tray provides quick links to key modules.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -25,10 +25,7 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![get_app_version])
         .setup(|app| {
-            // Window is created from tauri.conf.json config — loads dist/index.html
-            // which contains a full-page iframe to https://evolvepreneuriq.app
-
-            // Build system tray menu with quick links
+            // Build system tray menu
             let email = MenuItem::with_id(app, "email", "Email", true, None::<&str>)?;
             let chat = MenuItem::with_id(app, "chat", "Team Chat", true, None::<&str>)?;
             let docs = MenuItem::with_id(app, "docs", "Evolve Docs", true, None::<&str>)?;
@@ -67,14 +64,9 @@ fn main() {
                         _ => return,
                     };
 
-                    // Navigate the iframe inside the main window
                     if let Some(window) = app.get_webview_window("main") {
                         let url = format!("{}{}", APP_URL, path);
-                        let js = format!(
-                            "document.querySelector('iframe').src = '{}'",
-                            url
-                        );
-                        let _ = window.eval(&js);
+                        let _ = window.eval(&format!("window.location.href = '{}'", url));
                         let _ = window.set_focus();
                     }
                 })
