@@ -1,0 +1,32 @@
+app-id: com.evolveapp.desktop
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+command: evolve-desktop
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --talk-name=org.freedesktop.Notifications
+  - --filesystem=xdg-config:ro
+modules:
+  - name: webkit2gtk
+    buildsystem: simple
+    build-commands:
+      - echo "WebKitGTK provided by runtime"
+  - name: evolve-desktop
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 evolve-desktop /app/bin/evolve-desktop
+      - install -Dm644 icon.png /app/share/icons/hicolor/192x192/apps/com.evolveapp.desktop.png
+      - install -Dm644 com.evolveapp.desktop.desktop /app/share/applications/com.evolveapp.desktop.desktop
+    sources:
+      - type: file
+        path: evolve-desktop
+      - type: file
+        path: icon.png
+      - type: file
+        path: com.evolveapp.desktop.desktop

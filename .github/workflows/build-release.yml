@@ -132,6 +132,27 @@ jobs:
             echo "DMG rebuilt: $DMG_DIR/$DMG_NAME"
           fi
 
+      # Build Flatpak for universal Linux support (works on Fedora, Arch, old distros)
+      - name: Build Flatpak
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+
+          # Prepare Flatpak build directory
+          mkdir -p flatpak-build
+          BINARY="evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/evolve-desktop"
+          cp "$BINARY" flatpak-build/evolve-desktop
+          cp evolve-desktop/src-tauri/icons/icon.png flatpak-build/icon.png
+          cp evolve-desktop/com.evolveapp.desktop.desktop flatpak-build/com.evolveapp.desktop.desktop
+          cp evolve-desktop/com.evolveapp.desktop.yml flatpak-build/
+
+          cd flatpak-build
+          flatpak-builder --force-clean --repo=repo build-dir com.evolveapp.desktop.yml
+          flatpak build-bundle repo EvolveApp.flatpak com.evolveapp.desktop
+          echo "Flatpak built: $(ls -la EvolveApp.flatpak)"
+
       - name: Upload artifacts (Linux)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
         uses: actions/upload-artifact@v4
@@ -141,6 +162,7 @@ jobs:
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/deb/*.deb
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/appimage/*.AppImage
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/rpm/*.rpm
+            flatpak-build/EvolveApp.flatpak
 
       - name: Upload artifacts (Windows)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'windows-latest'
@@ -186,6 +208,7 @@ jobs:
           files: |
             artifacts/**/*.deb
             artifacts/**/*.AppImage
+            artifacts/**/*.flatpak
             artifacts/**/*.rpm
             artifacts/**/*.msi
             artifacts/**/*.exe
