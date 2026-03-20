@@ -1,18 +1,18 @@
-// EvolveApp Desktop — Thin WebView wrapper for evolvepreneuriq.app
+// EvolveApp Desktop — WebView wrapper for evolvepreneuriq.app
 //
-// Option A: Loads the web app directly. All features come from the web.
-// Desktop extras: system tray, native notifications, auto-update.
-//
-// No local database, no data sync, no custom UI — just the web app
-// in a native window.
+// Creates a native window that loads the web app directly via WebviewUrl::External.
+// Desktop extras: system tray with quick links to key modules.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    webview::WebviewUrl,
+    Manager, WebviewWindowBuilder,
 };
+
+const APP_URL: &str = "https://evolvepreneuriq.app";
 
 #[tauri::command]
 async fn get_app_version() -> String {
@@ -26,24 +26,28 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![get_app_version])
         .setup(|app| {
-            // Navigate the main window to the web app
-            // (frontendDist loads a local HTML first, then we redirect to the real app)
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.eval("window.location.href = 'https://evolvepreneuriq.app'");
-            }
+            // Create the main window loading the external web app URL directly.
+            // This bypasses the frontendDist entirely — no local HTML needed.
+            let url = APP_URL.parse().unwrap();
+            let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+                .title("EvolveApp")
+                .inner_size(1400.0, 900.0)
+                .min_inner_size(1024.0, 600.0)
+                .center()
+                .build()?;
 
             // Build system tray menu with quick links
-            let email = MenuItem::with_id(app, "email", "📧 Email", true, None::<&str>)?;
-            let chat = MenuItem::with_id(app, "chat", "💬 Team Chat", true, None::<&str>)?;
-            let docs = MenuItem::with_id(app, "docs", "📄 Evolve Docs", true, None::<&str>)?;
-            let va = MenuItem::with_id(app, "va", "🤖 VA Assistant", true, None::<&str>)?;
-            let sep1 = MenuItem::with_id(app, "sep1", "─────────────", false, None::<&str>)?;
-            let dashboard = MenuItem::with_id(app, "dashboard", "📊 Dashboard", true, None::<&str>)?;
-            let crm = MenuItem::with_id(app, "crm", "👥 CRM Contacts", true, None::<&str>)?;
-            let calendar = MenuItem::with_id(app, "calendar", "📅 Calendar", true, None::<&str>)?;
-            let books = MenuItem::with_id(app, "books", "📚 Books", true, None::<&str>)?;
-            let sep2 = MenuItem::with_id(app, "sep2", "─────────────", false, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "❌ Quit EvolveApp", true, None::<&str>)?;
+            let email = MenuItem::with_id(app, "email", "Email", true, None::<&str>)?;
+            let chat = MenuItem::with_id(app, "chat", "Team Chat", true, None::<&str>)?;
+            let docs = MenuItem::with_id(app, "docs", "Evolve Docs", true, None::<&str>)?;
+            let va = MenuItem::with_id(app, "va", "VA Assistant", true, None::<&str>)?;
+            let sep1 = MenuItem::with_id(app, "sep1", "---", false, None::<&str>)?;
+            let dashboard = MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
+            let crm = MenuItem::with_id(app, "crm", "CRM Contacts", true, None::<&str>)?;
+            let calendar = MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?;
+            let books = MenuItem::with_id(app, "books", "Books", true, None::<&str>)?;
+            let sep2 = MenuItem::with_id(app, "sep2", "---", false, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?;
 
             let menu = Menu::with_items(
                 app,
@@ -72,7 +76,7 @@ fn main() {
                     };
 
                     if let Some(window) = app.get_webview_window("main") {
-                        let url = format!("https://evolvepreneuriq.app{}", path);
+                        let url = format!("{}{}", APP_URL, path);
                         let _ = window.eval(&format!("window.location.href = '{}'", url));
                         let _ = window.set_focus();
                     }
