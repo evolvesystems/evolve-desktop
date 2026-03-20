@@ -101,6 +101,37 @@ jobs:
           args: --target ${{ matrix.platform.rust_target }}
           releaseId: 0
 
+      # Ad-hoc codesign the macOS app bundle so Gatekeeper doesn't block it.
+      # Without this, macOS Sonoma/Sequoia refuses to open the app entirely.
+      # Proper signing requires an Apple Developer certificate ($99/yr).
+      - name: Ad-hoc codesign macOS app
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        run: |
+          APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
+          if [ -n "$APP_BUNDLE" ]; then
+            echo "Signing: $APP_BUNDLE"
+            codesign --force --deep --sign - "$APP_BUNDLE"
+            echo "Verifying signature..."
+            codesign --verify --verbose "$APP_BUNDLE" || echo "Warning: verification failed but continuing"
+          else
+            echo "No .app bundle found to sign"
+          fi
+
+      # Rebuild DMG after signing (the DMG from tauri-action contains the unsigned app)
+      - name: Rebuild DMG with signed app
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        run: |
+          DMG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
+          APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
+          if [ -n "$DMG_FILE" ] && [ -n "$APP_BUNDLE" ]; then
+            echo "Rebuilding DMG with signed app..."
+            DMG_NAME=$(basename "$DMG_FILE")
+            DMG_DIR=$(dirname "$DMG_FILE")
+            rm -f "$DMG_FILE"
+            hdiutil create -volname "EvolveApp" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_DIR/$DMG_NAME"
+            echo "DMG rebuilt: $DMG_DIR/$DMG_NAME"
+          fi
+
       - name: Upload artifacts (Linux)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
         uses: actions/upload-artifact@v4
