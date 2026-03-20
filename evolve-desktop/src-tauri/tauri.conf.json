@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "",
     "devUrl": "https://evolvepreneuriq.app",
-    "beforeBuildCommand": "",
+    "beforeBuildCommand": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.writeFileSync('dist/index.html','<!DOCTYPE html><html><head><title>EvolveApp</title></head><body><script>window.location.href=\\\"https://evolvepreneuriq.app\\\"</script></body></html>')\"",
     "frontendDist": "../dist"
   },
   "bundle": {
