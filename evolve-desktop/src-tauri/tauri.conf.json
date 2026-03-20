@@ -1,18 +1,18 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "EvolveApp",
-  "version": "1.0.31",
+  "version": "2.0.0",
   "identifier": "com.evolveapp.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "",
+    "devUrl": "https://evolvepreneuriq.app",
+    "beforeBuildCommand": "",
     "frontendDist": "../dist"
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": "v2Compatible",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -46,26 +46,41 @@
     "windows": [
       {
         "title": "EvolveApp",
-        "width": 1280,
-        "height": 800,
+        "url": "https://evolvepreneuriq.app",
+        "width": 1400,
+        "height": 900,
         "minWidth": 1024,
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
         "center": true,
-        "transparent": false,
-        "alwaysOnTop": false,
-        "skipTaskbar": false,
-        "theme": "Light"
+        "transparent": false
       }
     ],
     "security": {
       "csp": null,
-      "assetProtocol": {
-        "enable": true,
-        "scope": ["$APPDATA/*", "$RESOURCE/*"]
-      }
+      "dangerousRemoteDomainIpcAccess": [
+        {
+          "scheme": "https",
+          "domain": "evolvepreneuriq.app",
+          "windows": ["main"],
+          "plugins": {
+            "event": true
+          }
+        }
+      ]
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://evolvepreneuriq.app/api/v1/desktop/updates/{{target}}/{{current_version}}"
+      ],
+      "pubkey": ""
+    },
+    "notification": {
+      "all": true
     }
   }
 }
