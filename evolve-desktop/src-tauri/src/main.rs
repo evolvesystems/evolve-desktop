@@ -26,6 +26,12 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![get_app_version])
         .setup(|app| {
+            // Navigate the main window to the web app
+            // (frontendDist loads a local HTML first, then we redirect to the real app)
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.eval("window.location.href = 'https://evolvepreneuriq.app'");
+            }
+
             // Build system tray menu with quick links
             let email = MenuItem::with_id(app, "email", "📧 Email", true, None::<&str>)?;
             let chat = MenuItem::with_id(app, "chat", "💬 Team Chat", true, None::<&str>)?;
