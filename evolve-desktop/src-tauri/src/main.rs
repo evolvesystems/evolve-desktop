@@ -1,6 +1,6 @@
 // EvolveApp Desktop — WebView wrapper for evolvepreneuriq.app
 //
-// Creates a native window that loads the web app directly via WebviewUrl::External.
+// Loads dist/index.html which contains a full-page iframe to the web app.
 // Desktop extras: system tray with quick links to key modules.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -8,8 +8,7 @@
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    webview::WebviewUrl,
-    Manager, WebviewWindowBuilder,
+    Manager,
 };
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
@@ -26,15 +25,8 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![get_app_version])
         .setup(|app| {
-            // Create the main window loading the external web app URL directly.
-            // This bypasses the frontendDist entirely — no local HTML needed.
-            let url = APP_URL.parse().unwrap();
-            let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("EvolveApp")
-                .inner_size(1400.0, 900.0)
-                .min_inner_size(1024.0, 600.0)
-                .center()
-                .build()?;
+            // Window is created from tauri.conf.json config — loads dist/index.html
+            // which contains a full-page iframe to https://evolvepreneuriq.app
 
             // Build system tray menu with quick links
             let email = MenuItem::with_id(app, "email", "Email", true, None::<&str>)?;
@@ -75,9 +67,14 @@ fn main() {
                         _ => return,
                     };
 
+                    // Navigate the iframe inside the main window
                     if let Some(window) = app.get_webview_window("main") {
                         let url = format!("{}{}", APP_URL, path);
-                        let _ = window.eval(&format!("window.location.href = '{}'", url));
+                        let js = format!(
+                            "document.querySelector('iframe').src = '{}'",
+                            url
+                        );
+                        let _ = window.eval(&js);
                         let _ = window.set_focus();
                     }
                 })
