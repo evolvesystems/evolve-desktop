@@ -37,7 +37,7 @@
     "macOS": {
       "entitlements": "Entitlements.plist",
       "frameworks": [],
-      "signingIdentity": "-",
+      "signingIdentity": null,
       "minimumSystemVersion": "10.15"
     }
   },
