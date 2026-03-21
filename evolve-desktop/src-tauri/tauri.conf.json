@@ -35,11 +35,10 @@
       }
     },
     "macOS": {
-      "entitlements": null,
-      "exceptionDomain": "",
+      "entitlements": "Entitlements.plist",
       "frameworks": [],
-      "providerShortName": null,
-      "signingIdentity": null
+      "signingIdentity": "-",
+      "minimumSystemVersion": "10.15"
     }
   },
   "app": {
@@ -54,12 +53,23 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
-        "center": true
+        "center": true,
+        "userAgent": "EvolveApp/2.1.0 Tauri/2"
       }
     ],
     "security": {
       "csp": null
     }
   },
-  "plugins": {}
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["evolveapp"]
+      }
+    },
+    "updater": {
+      "endpoints": ["https://evolvepreneuriq.app/api/v1/desktop/updates/{{target}}/{{current_version}}"],
+      "pubkey": ""
+    }
+  }
 }
