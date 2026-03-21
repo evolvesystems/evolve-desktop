@@ -191,9 +191,10 @@ jobs:
             echo "DMG rebuilt: $DMG_DIR/$DMG_NAME"
           fi
 
-      # Notarize DMG with Apple (only if Apple ID is configured)
+      # Notarize DMG with Apple (optional — skipped if no Apple ID configured)
       - name: Notarize macOS DMG
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        continue-on-error: true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
