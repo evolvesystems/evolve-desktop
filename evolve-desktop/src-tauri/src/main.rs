@@ -43,21 +43,25 @@ fn main() {
         .invoke_handler(tauri::generate_handler![get_app_version])
         .setup(|app| {
             // --- Deep link handler ---
-            // Listen for deep link URLs (evolveapp://path)
-            let handle = app.handle().clone();
-            app.listen("deep-link://new-url", move |event| {
-                if let Some(payload) = event.payload().strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-                    // payload is e.g. "evolveapp://dashboard" or "evolveapp:///email"
-                    if let Some(path) = payload.strip_prefix("evolveapp://") {
-                        let path = if path.starts_with('/') {
-                            path.to_string()
-                        } else {
-                            format!("/{}", path)
-                        };
-                        navigate_to(&handle, &path);
+            // Register for deep link URLs (evolveapp://path)
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        let url_str = url.as_str();
+                        if let Some(path) = url_str.strip_prefix("evolveapp://") {
+                            let path = if path.starts_with('/') {
+                                path.to_string()
+                            } else {
+                                format!("/{}", path)
+                            };
+                            navigate_to(&handle, &path);
+                        }
                     }
-                }
-            });
+                });
+            }
 
             // --- System tray ---
             let email = MenuItem::with_id(app, "email", "Email", true, None::<&str>)?;
