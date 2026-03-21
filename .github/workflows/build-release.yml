@@ -145,64 +145,39 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
 
-      # Import certificate to temporary keychain for notarization (macOS only)
-      - name: Import Apple Developer Certificate
-        if: ${{ ${{ steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest' && secrets.APPLE_CERTIFICATE != '' }} }}
-        run: |
-          # Create temporary keychain
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Import certificate
-          echo "${{ secrets.APPLE_CERTIFICATE }}" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" \
-            -k "$KEYCHAIN_PATH" \
-            -P "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
-
-          # Allow codesigning without dialog
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Save keychain path for notarization step
-          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
-          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> $GITHUB_ENV
-
-      # Code sign the macOS app with Developer ID Application certificate
-      - name: Code sign macOS app
-        if: ${{ steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest' && secrets.APPLE_CERTIFICATE != '' }}
+      # macOS code signing + notarization (handles both proper cert and ad-hoc fallback)
+      - name: Sign macOS app
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
-          if [ -n "$APP_BUNDLE" ]; then
-            echo "Code signing: $APP_BUNDLE"
-            codesign --force --deep \
-              --sign "${{ secrets.APPLE_SIGNING_IDENTITY }}" \
-              --timestamp \
-              --options=runtime \
-              "$APP_BUNDLE"
-
-            echo "Verifying signature..."
-            codesign --verify --verbose --deep "$APP_BUNDLE"
-            codesign --display --verbose "$APP_BUNDLE"
-          else
-            echo "WARNING: No .app bundle found to sign. Skipping code signing."
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "WARNING: No .app bundle found to sign"
+            exit 0
           fi
 
-      # Fallback: ad-hoc sign if no certificate is configured
-      - name: Ad-hoc codesign macOS app (fallback)
-        if: ${{ steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest' && secrets.APPLE_CERTIFICATE == '' }}
-        run: |
-          APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
-          if [ -n "$APP_BUNDLE" ]; then
-            echo "WARNING: No Apple Developer certificate configured. Using ad-hoc signing (Gatekeeper may block)."
-            codesign --force --deep --sign - "$APP_BUNDLE"
-            codesign --verify --verbose "$APP_BUNDLE" || echo "Warning: verification failed but continuing"
+          if [ -n "$APPLE_CERTIFICATE" ]; then
+            echo "Importing Apple Developer certificate..."
+            KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+            KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+            security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            security default-keychain -s "$KEYCHAIN_PATH"
+            security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+            security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+            echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+
+            echo "Signing with Developer ID: $APPLE_SIGNING_IDENTITY"
+            codesign --force --deep --sign "$APPLE_SIGNING_IDENTITY" --timestamp --options=runtime "$APP_BUNDLE"
+            codesign --verify --verbose --deep "$APP_BUNDLE"
           else
-            echo "WARNING: No .app bundle found to sign"
+            echo "No Apple certificate configured — using ad-hoc signing"
+            codesign --force --deep --sign - "$APP_BUNDLE"
+            codesign --verify --verbose "$APP_BUNDLE" || true
           fi
 
       # Rebuild DMG after signing
@@ -220,38 +195,27 @@ jobs:
             echo "DMG rebuilt: $DMG_DIR/$DMG_NAME"
           fi
 
-      # Notarize DMG with Apple
+      # Notarize DMG with Apple (only if Apple ID is configured)
       - name: Notarize macOS DMG
-        if: ${{ steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest' && secrets.APPLE_ID != '' }}
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          DMG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
-
-          if [ -z "$DMG_FILE" ]; then
-            echo "WARNING: No DMG file found for notarization. Skipping notarization."
+          if [ -z "$APPLE_ID" ]; then
+            echo "No Apple ID configured — skipping notarization"
             exit 0
           fi
-
-          echo "Submitting $DMG_FILE for notarization..."
-
-          # Submit for notarization
-          REQUEST_UUID=$(xcrun notarytool submit "$DMG_FILE" \
-            --apple-id "${{ secrets.APPLE_ID }}" \
-            --password "${{ secrets.APPLE_PASSWORD }}" \
-            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
-            --wait \
-            2>&1 | grep -i "id:" | awk '{print $NF}')
-
-          if [ -z "$REQUEST_UUID" ]; then
-            echo "ERROR: Failed to get notarization request UUID"
-            exit 1
+          DMG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
+          if [ -z "$DMG_FILE" ]; then
+            echo "No DMG found — skipping notarization"
+            exit 0
           fi
-
-          echo "Notarization request UUID: $REQUEST_UUID"
-
-          # Staple the ticket
+          echo "Submitting $DMG_FILE for notarization..."
+          xcrun notarytool submit "$DMG_FILE" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           echo "Stapling notarization ticket..."
           xcrun stapler staple "$DMG_FILE"
-
           echo "Notarization complete!"
 
       # Clean up temporary keychain
@@ -259,7 +223,6 @@ jobs:
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
         run: |
           if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
-            echo "Removing temporary keychain..."
             security delete-keychain "$KEYCHAIN_PATH" || true
           fi
 
