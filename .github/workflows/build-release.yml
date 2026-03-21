@@ -306,7 +306,7 @@ jobs:
         run: |
           sudo apt-get install -y flatpak flatpak-builder
           sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+          sudo flatpak install -y flathub org.gnome.Platform//46 org.gnome.Sdk//46
 
           # Prepare Flatpak build directory
           mkdir -p flatpak-build
