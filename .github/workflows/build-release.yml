@@ -141,7 +141,7 @@ jobs:
           # Download favicon from tenant CDN
           FAVICON_URL="${{ github.event.inputs.favicon_url || 'https://eiqv2-alpha.syd1.cdn.digitaloceanspaces.com/tenant-logos/favicon/1/favicon_69be39f5d4d9b.png' }}"
           echo "Downloading favicon from: $FAVICON_URL"
-          curl -sL "$FAVICON_URL" -o /tmp/source_icon.png
+          curl -sL "$FAVICON_URL" -o ${RUNNER_TEMP}/source_icon.png
 
           # Install Pillow for image processing
           pip3 install Pillow --quiet
@@ -151,7 +151,7 @@ jobs:
           from PIL import Image
           import os, struct, io
 
-          src = Image.open('/tmp/source_icon.png').convert('RGBA')
+          src = Image.open('${RUNNER_TEMP}/source_icon.png').convert('RGBA')
           icons_dir = 'evolve-desktop/src-tauri/icons'
 
           # PNG icons for Tauri
@@ -185,21 +185,21 @@ jobs:
 
           # Generate .icns (macOS) — only on macOS runners
           if [ "$(uname)" = "Darwin" ]; then
-            mkdir -p /tmp/EvolveApp.iconset
+            mkdir -p ${RUNNER_TEMP}/EvolveApp.iconset
             for size in 16 32 64 128 256 512 1024; do
               python3 -c "
           from PIL import Image
-          src = Image.open('/tmp/source_icon.png').convert('RGBA')
-          src.resize(($size, $size), Image.LANCZOS).save('/tmp/EvolveApp.iconset/icon_${size}x${size}.png')
+          src = Image.open('${RUNNER_TEMP}/source_icon.png').convert('RGBA')
+          src.resize(($size, $size), Image.LANCZOS).save('${RUNNER_TEMP}/EvolveApp.iconset/icon_${size}x${size}.png')
           "
             done
             # Create proper iconset naming
-            cp /tmp/EvolveApp.iconset/icon_32x32.png /tmp/EvolveApp.iconset/icon_16x16@2x.png
-            cp /tmp/EvolveApp.iconset/icon_64x64.png /tmp/EvolveApp.iconset/icon_32x32@2x.png
-            cp /tmp/EvolveApp.iconset/icon_256x256.png /tmp/EvolveApp.iconset/icon_128x128@2x.png
-            cp /tmp/EvolveApp.iconset/icon_512x512.png /tmp/EvolveApp.iconset/icon_256x256@2x.png
-            cp /tmp/EvolveApp.iconset/icon_1024x1024.png /tmp/EvolveApp.iconset/icon_512x512@2x.png
-            iconutil -c icns /tmp/EvolveApp.iconset -o evolve-desktop/src-tauri/icons/icon.icns
+            cp ${RUNNER_TEMP}/EvolveApp.iconset/icon_32x32.png ${RUNNER_TEMP}/EvolveApp.iconset/icon_16x16@2x.png
+            cp ${RUNNER_TEMP}/EvolveApp.iconset/icon_64x64.png ${RUNNER_TEMP}/EvolveApp.iconset/icon_32x32@2x.png
+            cp ${RUNNER_TEMP}/EvolveApp.iconset/icon_256x256.png ${RUNNER_TEMP}/EvolveApp.iconset/icon_128x128@2x.png
+            cp ${RUNNER_TEMP}/EvolveApp.iconset/icon_512x512.png ${RUNNER_TEMP}/EvolveApp.iconset/icon_256x256@2x.png
+            cp ${RUNNER_TEMP}/EvolveApp.iconset/icon_1024x1024.png ${RUNNER_TEMP}/EvolveApp.iconset/icon_512x512@2x.png
+            iconutil -c icns ${RUNNER_TEMP}/EvolveApp.iconset -o evolve-desktop/src-tauri/icons/icon.icns
             echo '  Generated icon.icns (macOS)'
           else
             echo '  Skipping .icns generation (not macOS)'
