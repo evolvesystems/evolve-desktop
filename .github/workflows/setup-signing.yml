@@ -19,51 +19,31 @@ jobs:
 
       - name: Generate Tauri signing key pair
         run: |
-          # Install tauri-cli and generate key with no password
           npm install @tauri-apps/cli@2
-          # Use TAURI_SIGNING_PRIVATE_KEY_PASSWORD env to avoid interactive prompt
-          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
-          npx tauri signer generate --ci -w $RUNNER_TEMP/tauri.key 2>&1 || true
+
+          # Pipe empty password to avoid interactive prompt
+          printf '\n\n' | npx tauri signer generate -w $RUNNER_TEMP/tauri.key 2>&1 && echo "Generated with tauri CLI" || {
+            # If that fails, try with expect
+            apt-get update -qq && apt-get install -y -qq expect > /dev/null 2>&1 || true
+            expect -c '
+              spawn npx tauri signer generate -w env(RUNNER_TEMP)/tauri.key
+              expect "password"
+              send "\r"
+              expect "password"
+              send "\r"
+              expect eof
+            ' 2>&1 || echo "expect also failed"
+          }
 
           if [ -f "$RUNNER_TEMP/tauri.key.pub" ]; then
-            echo "Key pair generated successfully"
-            echo "PUBKEY=$(cat $RUNNER_TEMP/tauri.key.pub)" >> $GITHUB_ENV
-
-            # Save private key as secret via gh cli
-            gh secret set TAURI_SIGNING_PRIVATE_KEY < $RUNNER_TEMP/tauri.key
-            gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""
-            echo "Private key saved to GitHub secrets"
-          else
-            echo "Tauri CLI failed, generating minisign-compatible key with Python"
-            python3 << 'PYSCRIPT'
-          import base64, os, struct, hashlib, secrets as sec
-
-          # Generate Ed25519 keypair (minisign format)
-          # Tauri uses minisign which is Ed25519-based
-          seed = sec.token_bytes(32)
-
-          # Use hashlib for key derivation (Ed25519 seed)
-          import subprocess
-          result = subprocess.run(['openssl', 'genpkey', '-algorithm', 'Ed25519', '-out', '/tmp/ed.pem'], capture_output=True)
-          result2 = subprocess.run(['openssl', 'pkey', '-in', '/tmp/ed.pem', '-pubout', '-out', '/tmp/ed.pub'], capture_output=True)
-
-          with open('/tmp/ed.pem', 'rb') as f:
-              privkey = base64.b64encode(f.read()).decode()
-          with open('/tmp/ed.pub', 'rb') as f:
-              pubkey = base64.b64encode(f.read()).decode()
-
-          print(f'GENERATED PUBKEY: {pubkey}')
-
-          with open(os.environ['RUNNER_TEMP'] + '/pubkey.txt', 'w') as f:
-              f.write(pubkey)
-          with open(os.environ['RUNNER_TEMP'] + '/privkey.txt', 'w') as f:
-              f.write(privkey)
-          PYSCRIPT
-
-            PUBKEY=$(cat $RUNNER_TEMP/pubkey.txt)
+            echo "Key pair generated!"
+            PUBKEY=$(cat $RUNNER_TEMP/tauri.key.pub)
             echo "PUBKEY=$PUBKEY" >> $GITHUB_ENV
-            gh secret set TAURI_SIGNING_PRIVATE_KEY < $RUNNER_TEMP/privkey.txt
-            gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""
+            gh secret set TAURI_SIGNING_PRIVATE_KEY < $RUNNER_TEMP/tauri.key
+            echo "" | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          else
+            echo "::error::Failed to generate key pair"
+            exit 1
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
