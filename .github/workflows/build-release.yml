@@ -150,28 +150,18 @@ jobs:
           cat > "${RUNNER_TEMP}/gen_icons.py" << 'PYSCRIPT'
           import os, sys
           from PIL import Image
-          raw = Image.open(os.environ['SOURCE_ICON']).convert('RGBA')
-          w, h = raw.size
-          # Make square with transparent padding if non-square
+          src = Image.open(os.environ['SOURCE_ICON']).convert('RGBA')
+          w, h = src.size
+          # Make square with padding if non-square
           if w != h:
               s = max(w, h)
-              square = Image.new('RGBA', (s, s), (0, 0, 0, 0))
-              square.paste(raw, ((s - w) // 2, (s - h) // 2))
-              raw = square
-          # Remove white/near-white background corners (make transparent)
-          data = raw.getdata()
-          new_data = []
-          for item in data:
-              # If pixel is white-ish (all channels > 240), make transparent
-              if item[0] > 240 and item[1] > 240 and item[2] > 240:
-                  new_data.append((255, 255, 255, 0))
-              else:
-                  new_data.append(item)
-          raw.putdata(new_data)
-          src = raw
-          # Ensure good quality at all sizes
+              square = Image.new('RGBA', (s, s), (255, 255, 255, 255))
+              square.paste(src, ((s - w) // 2, (s - h) // 2))
+              src = square
+          # Ensure high res source for sharp downscaling
           if src.size[0] < 1024:
               src = src.resize((1024, 1024), Image.LANCZOS)
+          print(f'  Source icon: {src.size}, mode: {src.mode}')
           icons_dir = 'evolve-desktop/src-tauri/icons'
           sizes = {'icon.png':512,'32x32.png':32,'128x128.png':128,'128x128@2x.png':256,
             'Square30x30Logo.png':30,'Square44x44Logo.png':44,'Square71x71Logo.png':71,
