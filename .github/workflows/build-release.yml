@@ -146,41 +146,35 @@ jobs:
           # Install Pillow for image processing
           pip3 install Pillow --quiet
 
-          # Generate all required icon sizes
+          # Write Python icon generator script to temp file
+          cat > "${RUNNER_TEMP}/gen_icons.py" << 'PYSCRIPT'
+          import os, sys
+          from PIL import Image
+          src = Image.open(os.environ['SOURCE_ICON']).convert('RGBA')
+          icons_dir = 'evolve-desktop/src-tauri/icons'
+          sizes = {'icon.png':512,'32x32.png':32,'128x128.png':128,'128x128@2x.png':256,
+            'Square30x30Logo.png':30,'Square44x44Logo.png':44,'Square71x71Logo.png':71,
+            'Square89x89Logo.png':89,'Square107x107Logo.png':107,'Square142x142Logo.png':142,
+            'Square150x150Logo.png':150,'Square284x284Logo.png':284,'Square310x310Logo.png':310,
+            'StoreLogo.png':50}
+          for name, size in sizes.items():
+              src.resize((size, size), Image.LANCZOS).save(os.path.join(icons_dir, name))
+              print(f'  Generated {name} ({size}x{size})')
+          ico_sizes = [16, 24, 32, 48, 64, 128, 256]
+          ico_images = [src.resize((s, s), Image.LANCZOS) for s in ico_sizes]
+          ico_images[0].save(os.path.join(icons_dir, 'icon.ico'), format='ICO', sizes=[(s, s) for s in ico_sizes])
+          print('  Generated icon.ico')
+          PYSCRIPT
+
           export SOURCE_ICON="${RUNNER_TEMP}/source_icon.png"
-          python3 -c "
-import os
-from PIL import Image
-
-src = Image.open(os.environ['SOURCE_ICON']).convert('RGBA')
-icons_dir = 'evolve-desktop/src-tauri/icons'
-
-sizes = {
-    'icon.png': 512, '32x32.png': 32, '128x128.png': 128, '128x128@2x.png': 256,
-    'Square30x30Logo.png': 30, 'Square44x44Logo.png': 44, 'Square71x71Logo.png': 71,
-    'Square89x89Logo.png': 89, 'Square107x107Logo.png': 107, 'Square142x142Logo.png': 142,
-    'Square150x150Logo.png': 150, 'Square284x284Logo.png': 284, 'Square310x310Logo.png': 310,
-    'StoreLogo.png': 50,
-}
-for name, size in sizes.items():
-    src.resize((size, size), Image.LANCZOS).save(os.path.join(icons_dir, name))
-    print(f'  Generated {name} ({size}x{size})')
-
-ico_sizes = [16, 24, 32, 48, 64, 128, 256]
-ico_images = [src.resize((s, s), Image.LANCZOS) for s in ico_sizes]
-ico_images[0].save(os.path.join(icons_dir, 'icon.ico'), format='ICO', sizes=[(s, s) for s in ico_sizes])
-print('  Generated icon.ico')
-"
+          python3 "${RUNNER_TEMP}/gen_icons.py"
 
           # Generate .icns (macOS only)
           if [ "$(uname)" = "Darwin" ]; then
             ICONSET="${RUNNER_TEMP}/EvolveApp.iconset"
             mkdir -p "$ICONSET"
             for size in 16 32 64 128 256 512 1024; do
-              python3 -c "
-from PIL import Image; import os
-Image.open(os.environ['SOURCE_ICON']).convert('RGBA').resize(($size,$size), Image.LANCZOS).save('$ICONSET/icon_${size}x${size}.png')
-"
+              python3 -c "from PIL import Image; import os; Image.open(os.environ['SOURCE_ICON']).convert('RGBA').resize(($size,$size), Image.LANCZOS).save('$ICONSET/icon_${size}x${size}.png')"
             done
             cp "$ICONSET/icon_32x32.png" "$ICONSET/icon_16x16@2x.png"
             cp "$ICONSET/icon_64x64.png" "$ICONSET/icon_32x32@2x.png"
