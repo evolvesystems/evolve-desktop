@@ -124,38 +124,75 @@ fn main() {
                 })
                 .build(app)?;
 
-            // Inject persistent nav on every page load (works on external URLs too)
+            // Inject sidebar on every page load (same design as EIQ sidebar)
             if let Some(window) = app.get_webview_window("main") {
                 window.on_page_load(move |webview, payload| {
                     let url = payload.url().to_string();
-                    let is_eiq = url.contains("evolvepreneuriq.app") && !url.contains("dashboard.evolvepreneuriq.app");
-                    // Only inject on non-EIQ pages (EIQ has its own sidebar)
-                    if !is_eiq {
-                        let _ = webview.eval(r#"
-                            (function() {
-                                if (document.getElementById('tauri-nav')) return;
-                                var nav = document.createElement('div');
-                                nav.id = 'tauri-nav';
-                                nav.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:99999;display:flex;gap:6px;font-family:system-ui';
-                                var btns = [
-                                    {label:'\u2190', title:'Back', action:'history.back()'},
-                                    {label:'\u21BB', title:'Refresh', action:'location.reload()'},
-                                    {label:'\uD83C\uDFE0', title:'Home', action:'location.href="https://evolvepreneuriq.app/dashboard"'}
-                                ];
-                                btns.forEach(function(b) {
-                                    var btn = document.createElement('button');
-                                    btn.textContent = b.label;
-                                    btn.title = b.title;
-                                    btn.onclick = function() { eval(b.action); };
-                                    btn.style.cssText = 'width:40px;height:40px;border-radius:50%;background:#333;color:#fff;border:none;font-size:16px;cursor:pointer;opacity:0.6;box-shadow:0 2px 8px rgba(0,0,0,0.3)';
-                                    btn.onmouseenter = function() { this.style.opacity='1'; };
-                                    btn.onmouseleave = function() { this.style.opacity='0.6'; };
-                                    nav.appendChild(btn);
-                                });
-                                document.body.appendChild(nav);
-                            })();
-                        "#);
-                    }
+                    // Skip injection on EIQ pages — they have their own dynamic sidebar
+                    let is_eiq = url.contains("evolvepreneuriq.app")
+                        && !url.contains("dashboard.evolvepreneuriq.app")
+                        && !url.contains("/download");
+                    if is_eiq { return; }
+
+                    let _ = webview.eval(r#"
+                    (function() {
+                        if (document.getElementById('tauri-sidebar')) return;
+                        var APP = 'https://evolvepreneuriq.app';
+                        var tabs = [
+                            {l:'Home',e:'\uD83C\uDFE0',u:APP+'/dashboard'},
+                            {l:'Mail',e:'\uD83D\uDCE7',u:APP+'/email-manager'},
+                            {l:'Chat',e:'\uD83D\uDCAC',u:APP+'/chat'},
+                            {l:'CRM',e:'\uD83D\uDC65',u:APP+'/crm-marketing/contacts'},
+                            {l:'Meet',e:'\uD83D\uDCC5',u:APP+'/evolvemeet'},
+                            {l:'Docs',e:'\uD83D\uDCC4',u:APP+'/evolve-docs'}
+                        ];
+                        var sb = document.createElement('div');
+                        sb.id = 'tauri-sidebar';
+                        sb.style.cssText = 'position:fixed;top:0;left:0;bottom:0;width:56px;background:#1a1a2e;z-index:99999;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;font-family:system-ui';
+
+                        // Logo / Home
+                        var logo = document.createElement('a');
+                        logo.href = APP + '/dashboard';
+                        logo.style.cssText = 'width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;text-decoration:none;margin-bottom:8px';
+                        logo.textContent = 'E';
+                        sb.appendChild(logo);
+
+                        tabs.forEach(function(t) {
+                            var a = document.createElement('a');
+                            a.href = t.u;
+                            a.title = t.l;
+                            a.style.cssText = 'width:44px;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:10px;color:rgba(255,255,255,0.5);text-decoration:none;font-size:9px;gap:2px;transition:all 0.15s';
+                            a.innerHTML = '<span style="font-size:18px">'+t.e+'</span><span>'+t.l+'</span>';
+                            a.onmouseenter = function(){this.style.background='rgba(255,255,255,0.1)';this.style.color='#fff'};
+                            a.onmouseleave = function(){this.style.background='none';this.style.color='rgba(255,255,255,0.5)'};
+                            sb.appendChild(a);
+                        });
+
+                        // Spacer
+                        var sp = document.createElement('div');
+                        sp.style.flex = '1';
+                        sb.appendChild(sp);
+
+                        // Back + Refresh
+                        var back = document.createElement('button');
+                        back.onclick = function(){history.back()};
+                        back.title = 'Back';
+                        back.style.cssText = 'width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.4);border:none;font-size:14px;cursor:pointer;margin-bottom:4px';
+                        back.textContent = '\u2190';
+                        sb.appendChild(back);
+
+                        var ref = document.createElement('button');
+                        ref.onclick = function(){location.reload()};
+                        ref.title = 'Refresh';
+                        ref.style.cssText = 'width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.4);border:none;font-size:14px;cursor:pointer;margin-bottom:8px';
+                        ref.textContent = '\u21BB';
+                        sb.appendChild(ref);
+
+                        document.body.appendChild(sb);
+                        document.body.style.marginLeft = '56px';
+                        document.body.style.width = 'calc(100% - 56px)';
+                    })();
+                    "#);
                 });
             }
 
