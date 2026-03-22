@@ -124,6 +124,41 @@ fn main() {
                 })
                 .build(app)?;
 
+            // Inject persistent nav on every page load (works on external URLs too)
+            if let Some(window) = app.get_webview_window("main") {
+                window.on_page_load(move |webview, payload| {
+                    let url = payload.url().to_string();
+                    let is_eiq = url.contains("evolvepreneuriq.app") && !url.contains("dashboard.evolvepreneuriq.app");
+                    // Only inject on non-EIQ pages (EIQ has its own sidebar)
+                    if !is_eiq {
+                        let _ = webview.eval(r#"
+                            (function() {
+                                if (document.getElementById('tauri-nav')) return;
+                                var nav = document.createElement('div');
+                                nav.id = 'tauri-nav';
+                                nav.style.cssText = 'position:fixed;bottom:16px;left:16px;z-index:99999;display:flex;gap:6px;font-family:system-ui';
+                                var btns = [
+                                    {label:'\u2190', title:'Back', action:'history.back()'},
+                                    {label:'\u21BB', title:'Refresh', action:'location.reload()'},
+                                    {label:'\uD83C\uDFE0', title:'Home', action:'location.href="https://evolvepreneuriq.app/dashboard"'}
+                                ];
+                                btns.forEach(function(b) {
+                                    var btn = document.createElement('button');
+                                    btn.textContent = b.label;
+                                    btn.title = b.title;
+                                    btn.onclick = function() { eval(b.action); };
+                                    btn.style.cssText = 'width:40px;height:40px;border-radius:50%;background:#333;color:#fff;border:none;font-size:16px;cursor:pointer;opacity:0.6;box-shadow:0 2px 8px rgba(0,0,0,0.3)';
+                                    btn.onmouseenter = function() { this.style.opacity='1'; };
+                                    btn.onmouseleave = function() { this.style.opacity='0.6'; };
+                                    nav.appendChild(btn);
+                                });
+                                document.body.appendChild(nav);
+                            })();
+                        "#);
+                    }
+                });
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())
