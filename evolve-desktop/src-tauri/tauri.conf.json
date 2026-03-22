@@ -12,7 +12,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -78,12 +78,16 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["evolveapp"]
+        "schemes": [
+          "evolveapp"
+        ]
       }
     },
     "updater": {
-      "endpoints": ["https://evolvepreneuriq.app/api/v1/desktop/updates/{{target}}/{{current_version}}"],
-      "pubkey": ""
+      "endpoints": [
+        "https://evolvepreneuriq.app/api/v1/desktop/updates/{{target}}/{{current_version}}"
+      ],
+      "pubkey": "RWRUFs2e3/jNpUJAR8DjOGAQhbh6WsT4v7uaXDH5kGEFVbYFyz9TIQyc"
     }
   }
 }
