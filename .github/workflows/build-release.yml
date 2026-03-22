@@ -136,6 +136,7 @@ jobs:
 
       - name: Generate app icons from tenant favicon
         if: steps.should_build.outputs.build == 'true'
+        shell: bash
         run: |
           # Download favicon from tenant CDN
           FAVICON_URL="${{ github.event.inputs.favicon_url || 'https://eiqv2-alpha.syd1.cdn.digitaloceanspaces.com/tenant-logos/favicon/1/favicon_69be39f5d4d9b.png' }}"
