@@ -144,7 +144,7 @@ jobs:
           curl -sL "$FAVICON_URL" -o ${RUNNER_TEMP}/source_icon.png
 
           # Install Pillow for image processing
-          pip3 install Pillow --quiet
+          pip3 install Pillow --quiet --break-system-packages 2>/dev/null || pip3 install Pillow --quiet || pip install Pillow --quiet
 
           # Write Python icon generator script to temp file
           cat > "${RUNNER_TEMP}/gen_icons.py" << 'PYSCRIPT'
