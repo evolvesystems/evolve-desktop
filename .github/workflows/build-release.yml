@@ -207,9 +207,10 @@ jobs:
           args: --target ${{ matrix.platform.rust_target }}
           releaseId: 0
         env:
-          # Pass updater signing keys to Tauri (only if configured)
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Updater signing disabled until key format is validated
+          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY: ""
 
       # macOS code signing + notarization (handles both proper cert and ad-hoc fallback)
       - name: Sign macOS app
