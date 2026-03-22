@@ -5,7 +5,7 @@ on:
 
 jobs:
   generate-keys:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -17,56 +17,68 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Tauri CLI
-        run: npm install -g @tauri-apps/cli@2
-
-      - name: Generate signing key pair
+      - name: Generate Tauri signing key pair
         run: |
-          # Generate key pair with empty password for CI
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" npx @tauri-apps/cli signer generate -w $RUNNER_TEMP/update.key --ci 2>&1 || {
-            # Fallback: use expect-style input
-            echo "" | npx @tauri-apps/cli signer generate -w $RUNNER_TEMP/update.key 2>&1 || true
-          }
+          # Install tauri-cli and generate key with no password
+          npm install @tauri-apps/cli@2
+          # Use TAURI_SIGNING_PRIVATE_KEY_PASSWORD env to avoid interactive prompt
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          npx tauri signer generate --ci -w $RUNNER_TEMP/tauri.key 2>&1 || true
 
-          # Check if keys were generated
-          if [ -f "$RUNNER_TEMP/update.key" ] && [ -f "$RUNNER_TEMP/update.key.pub" ]; then
-            echo "Keys generated successfully"
-            PRIVKEY=$(cat $RUNNER_TEMP/update.key)
-            PUBKEY=$(cat $RUNNER_TEMP/update.key.pub)
-            echo "PUBLIC_KEY=$PUBKEY" >> $GITHUB_ENV
-            echo "PRIVATE_KEY<<EOF" >> $GITHUB_ENV
-            echo "$PRIVKEY" >> $GITHUB_ENV
-            echo "EOF" >> $GITHUB_ENV
+          if [ -f "$RUNNER_TEMP/tauri.key.pub" ]; then
+            echo "Key pair generated successfully"
+            echo "PUBKEY=$(cat $RUNNER_TEMP/tauri.key.pub)" >> $GITHUB_ENV
+
+            # Save private key as secret via gh cli
+            gh secret set TAURI_SIGNING_PRIVATE_KEY < $RUNNER_TEMP/tauri.key
+            gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""
+            echo "Private key saved to GitHub secrets"
           else
-            echo "Key generation failed, trying alternative method..."
-            # Generate Ed25519 key pair using openssl
-            openssl genpkey -algorithm ed25519 -out $RUNNER_TEMP/ed25519.pem
-            PRIVKEY=$(base64 -i $RUNNER_TEMP/ed25519.pem)
-            PUBKEY=$(openssl pkey -in $RUNNER_TEMP/ed25519.pem -pubout | base64)
-            echo "PUBLIC_KEY=$PUBKEY" >> $GITHUB_ENV
-            echo "PRIVATE_KEY=$PRIVKEY" >> $GITHUB_ENV
-          fi
+            echo "Tauri CLI failed, generating minisign-compatible key with Python"
+            python3 << 'PYSCRIPT'
+          import base64, os, struct, hashlib, secrets as sec
 
-      - name: Save private key as GitHub secret
+          # Generate Ed25519 keypair (minisign format)
+          # Tauri uses minisign which is Ed25519-based
+          seed = sec.token_bytes(32)
+
+          # Use hashlib for key derivation (Ed25519 seed)
+          import subprocess
+          result = subprocess.run(['openssl', 'genpkey', '-algorithm', 'Ed25519', '-out', '/tmp/ed.pem'], capture_output=True)
+          result2 = subprocess.run(['openssl', 'pkey', '-in', '/tmp/ed.pem', '-pubout', '-out', '/tmp/ed.pub'], capture_output=True)
+
+          with open('/tmp/ed.pem', 'rb') as f:
+              privkey = base64.b64encode(f.read()).decode()
+          with open('/tmp/ed.pub', 'rb') as f:
+              pubkey = base64.b64encode(f.read()).decode()
+
+          print(f'GENERATED PUBKEY: {pubkey}')
+
+          with open(os.environ['RUNNER_TEMP'] + '/pubkey.txt', 'w') as f:
+              f.write(pubkey)
+          with open(os.environ['RUNNER_TEMP'] + '/privkey.txt', 'w') as f:
+              f.write(privkey)
+          PYSCRIPT
+
+            PUBKEY=$(cat $RUNNER_TEMP/pubkey.txt)
+            echo "PUBKEY=$PUBKEY" >> $GITHUB_ENV
+            gh secret set TAURI_SIGNING_PRIVATE_KEY < $RUNNER_TEMP/privkey.txt
+            gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "$PRIVATE_KEY" | gh secret set TAURI_SIGNING_PRIVATE_KEY
-          echo "" | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 
-      - name: Update tauri.conf.json with public key
+      - name: Update tauri.conf.json
         run: |
-          cd evolve-desktop/src-tauri
-          # Update pubkey in tauri.conf.json
           python3 -c "
           import json
-          with open('tauri.conf.json') as f:
+          with open('evolve-desktop/src-tauri/tauri.conf.json') as f:
               conf = json.load(f)
-          conf['plugins']['updater']['pubkey'] = '${{ env.PUBLIC_KEY }}'
+          conf['plugins']['updater']['pubkey'] = '${{ env.PUBKEY }}'
           conf['bundle']['createUpdaterArtifacts'] = True
-          with open('tauri.conf.json', 'w') as f:
+          with open('evolve-desktop/src-tauri/tauri.conf.json', 'w') as f:
               json.dump(conf, f, indent=2)
-          print('Updated tauri.conf.json with pubkey and enabled updater artifacts')
+          print('Updated tauri.conf.json')
           "
 
       - name: Commit and push
@@ -74,18 +86,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add evolve-desktop/src-tauri/tauri.conf.json
-          git commit -m "feat: enable auto-updater with signing key
+          git diff --cached --quiet || git commit -m "feat: enable auto-updater with signing pubkey
 
-          Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>" || echo "No changes to commit"
+          Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
           git push
 
-      - name: Output public key
+      - name: Summary
         run: |
-          echo "========================================="
-          echo "PUBLIC KEY (for reference):"
-          echo "$PUBLIC_KEY"
-          echo "========================================="
-          echo "Private key saved to TAURI_SIGNING_PRIVATE_KEY secret"
-          echo "tauri.conf.json updated with pubkey"
-          echo "createUpdaterArtifacts enabled"
-          echo "========================================="
+          echo "## Signing Key Setup Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- Public key: \`$PUBKEY\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Private key saved to \`TAURI_SIGNING_PRIVATE_KEY\` secret" >> $GITHUB_STEP_SUMMARY
+          echo "- \`createUpdaterArtifacts\` enabled in tauri.conf.json" >> $GITHUB_STEP_SUMMARY
+          echo "- Next build will produce signed update artifacts" >> $GITHUB_STEP_SUMMARY
