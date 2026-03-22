@@ -214,6 +214,7 @@ jobs:
       # macOS code signing + notarization (handles both proper cert and ad-hoc fallback)
       - name: Sign macOS app
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        continue-on-error: true
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
