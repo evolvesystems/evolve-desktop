@@ -44,6 +44,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "EvolveApp",
         "url": "https://evolvepreneuriq.app",
         "width": 1400,
@@ -54,7 +55,20 @@
         "fullscreen": false,
         "decorations": true,
         "center": true,
+        "visible": false,
         "userAgent": "EvolveApp/2.2.3 Tauri/2"
+      },
+      {
+        "label": "splash",
+        "title": "EvolveApp",
+        "url": "splash.html",
+        "width": 480,
+        "height": 360,
+        "resizable": false,
+        "decorations": false,
+        "center": true,
+        "alwaysOnTop": true,
+        "transparent": true
       }
     ],
     "security": {
