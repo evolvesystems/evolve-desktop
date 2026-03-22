@@ -10,10 +10,21 @@ finish-args:
   - --socket=wayland
   - --socket=pulseaudio
   - --device=dri
+  # Notifications & system tray
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
-  - --filesystem=xdg-config:ro
-  - --filesystem=xdg-data:ro
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.FileChooser
+  # File downloads + autostart + deep links
+  - --filesystem=xdg-config
+  - --filesystem=xdg-data
+  - --filesystem=xdg-download
+  # Secret storage (for login session persistence)
+  - --talk-name=org.freedesktop.secrets
+  # GPU acceleration for WebView
+  - --device=dri
+  # Allow opening URLs in system browser
+  - --talk-name=org.freedesktop.portal.OpenURI
 modules:
   - name: libayatana-appindicator
     buildsystem: cmake-ninja

@@ -1,9 +1,10 @@
 [Desktop Entry]
 Name=EvolveApp
 Comment=Business workspace desktop application
-Exec=evolve-desktop
+Exec=evolve-desktop %u
 Icon=com.evolveapp.desktop
 Terminal=false
 Type=Application
 Categories=Office;Network;
 StartupWMClass=EvolveApp
+MimeType=x-scheme-handler/evolveapp;
