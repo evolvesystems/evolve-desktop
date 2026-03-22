@@ -297,6 +297,7 @@ jobs:
 
       # Build Flatpak for universal Linux support (works on Fedora, Arch, old distros)
       - name: Build Flatpak
+        continue-on-error: true
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
         run: |
           sudo apt-get install -y flatpak flatpak-builder
