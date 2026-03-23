@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=EvolveApp
 Comment=Business workspace desktop application
-Exec=env WEBKIT_DISABLE_DMABUF_RENDERER=1 evolve-desktop %u
+Exec=evolve-desktop %u
 Icon=com.evolveapp.desktop
 Terminal=false
 Type=Application
