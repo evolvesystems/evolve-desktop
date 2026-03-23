@@ -29,14 +29,33 @@ fn navigate_to(app: &tauri::AppHandle, path: &str) {
     }
 }
 
-/// JS to load the unified sidebar from the EIQ server
+/// JS injected on every page load:
+/// 1. Immediately reserves 56px sidebar space + dark placeholder (no flash)
+/// 2. Loads the full sidebar script which replaces the placeholder
 const SIDEBAR_LOADER_JS: &str = r#"
 (function() {
-    if (document.getElementById('desktop-sidebar') || document.getElementById('desktop-sidebar-loader')) return;
-    var s = document.createElement('script');
-    s.id = 'desktop-sidebar-loader';
-    s.src = 'https://evolvepreneuriq.app/js/desktop-sidebar.js?v=' + Date.now();
-    document.head.appendChild(s);
+    // 1. Reserve sidebar space IMMEDIATELY — prevents layout shift
+    if (!document.getElementById('desktop-sidebar-reserve')) {
+        var style = document.createElement('style');
+        style.id = 'desktop-sidebar-reserve';
+        style.textContent = 'body{margin-left:56px !important}' +
+            '#desktop-sidebar-placeholder{position:fixed;top:0;left:0;bottom:0;width:56px;' +
+            'background:oklch(0.21 0.006 285.88);z-index:99998}' +
+            '.navbar,.sticky,.fixed-top,[class*="sticky"]{left:56px !important;width:calc(100% - 56px) !important}';
+        (document.head || document.documentElement).appendChild(style);
+
+        var ph = document.createElement('div');
+        ph.id = 'desktop-sidebar-placeholder';
+        (document.body || document.documentElement).appendChild(ph);
+    }
+
+    // 2. Load full sidebar script (replaces placeholder with interactive sidebar)
+    if (!document.getElementById('desktop-sidebar') && !document.getElementById('desktop-sidebar-loader')) {
+        var s = document.createElement('script');
+        s.id = 'desktop-sidebar-loader';
+        s.src = 'https://evolvepreneuriq.app/js/desktop-sidebar.js?v=' + Date.now();
+        document.head.appendChild(s);
+    }
 })();
 "#;
 
