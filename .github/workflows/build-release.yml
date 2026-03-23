@@ -378,7 +378,7 @@ jobs:
           name: Release v${{ needs.validate-version.outputs.version }}
           body: ${{ github.event.inputs.release_notes || 'Automated release build' }}
           draft: false
-          prerelease: ${{ github.event.inputs.is_stable != 'true' }}
+          prerelease: ${{ github.event.inputs.is_stable == 'false' }}
           files: |
             artifacts/**/*.deb
             artifacts/**/*.deb.sig
