@@ -2,7 +2,7 @@ app-id: com.evolveapp.desktop
 runtime: org.gnome.Platform
 runtime-version: '46'
 sdk: org.gnome.Sdk
-command: evolve-desktop
+command: evolve-desktop-wrapper.sh
 finish-args:
   - --share=ipc
   - --share=network
@@ -10,7 +10,7 @@ finish-args:
   - --socket=fallback-x11
   - --socket=wayland
   - --socket=pulseaudio
-  - --device=dri
+  - --device=all
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
   - --talk-name=org.freedesktop.portal.Desktop
@@ -28,12 +28,15 @@ modules:
   - name: evolve-desktop
     buildsystem: simple
     build-commands:
-      - install -Dm755 evolve-desktop /app/bin/evolve-desktop
+      - install -Dm755 evolve-desktop /app/bin/evolve-desktop-bin
+      - install -Dm755 evolve-desktop-wrapper.sh /app/bin/evolve-desktop-wrapper.sh
       - install -Dm644 icon.png /app/share/icons/hicolor/192x192/apps/com.evolveapp.desktop.png
       - install -Dm644 com.evolveapp.desktop.desktop /app/share/applications/com.evolveapp.desktop.desktop
     sources:
       - type: file
         path: evolve-desktop
+      - type: file
+        path: evolve-desktop-wrapper.sh
       - type: file
         path: icon.png
       - type: file

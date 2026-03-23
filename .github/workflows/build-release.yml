@@ -294,6 +294,7 @@ jobs:
           cp "$BINARY" flatpak-build/evolve-desktop
           cp evolve-desktop/src-tauri/icons/icon.png flatpak-build/icon.png
           cp evolve-desktop/com.evolveapp.desktop.desktop flatpak-build/com.evolveapp.desktop.desktop
+          cp evolve-desktop/evolve-desktop-wrapper.sh flatpak-build/evolve-desktop-wrapper.sh
           cp evolve-desktop/com.evolveapp.desktop.yml flatpak-build/
           cp -r evolve-desktop/shared-modules flatpak-build/shared-modules
 
