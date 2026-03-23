@@ -315,8 +315,8 @@ jobs:
 
           cd flatpak-build
           flatpak-builder --force-clean --repo=repo build-dir com.evolveapp.desktop.yml
-          flatpak build-bundle repo EvolveApp.flatpak com.evolveapp.desktop
-          echo "Flatpak built: $(ls -la EvolveApp.flatpak)"
+          flatpak build-bundle repo EvolveApp_${{ needs.validate-version.outputs.version }}.flatpak com.evolveapp.desktop
+          echo "Flatpak built: $(ls -la EvolveApp_${{ needs.validate-version.outputs.version }}.flatpak)"
 
       - name: Upload artifacts (Linux)
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'ubuntu-22.04'
@@ -330,7 +330,7 @@ jobs:
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/appimage/*.AppImage.sig
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/rpm/*.rpm
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/rpm/*.rpm.sig
-            flatpak-build/EvolveApp.flatpak
+            flatpak-build/EvolveApp_${{ needs.validate-version.outputs.version }}.flatpak
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/**/*.json
 
       - name: Upload artifacts (Windows)
