@@ -312,6 +312,18 @@ jobs:
           cp evolve-desktop/com.evolveapp.desktop.desktop flatpak-build/com.evolveapp.desktop.desktop
           cp evolve-desktop/com.evolveapp.desktop.yml flatpak-build/
 
+          # Bundle system tray .so files from Ubuntu build environment
+          for lib in libayatana-appindicator3.so.1 libayatana-indicator3.so.7 libdbusmenu-glib.so.4 libdbusmenu-gtk3.so.4; do
+            FOUND=$(find /usr/lib /usr/lib/x86_64-linux-gnu -name "$lib" 2>/dev/null | head -1)
+            if [ -n "$FOUND" ]; then
+              cp "$FOUND" flatpak-build/
+              echo "Bundled: $lib from $FOUND"
+            else
+              echo "Warning: $lib not found on system"
+              touch "flatpak-build/$lib"
+            fi
+          done
+
           cd flatpak-build
           flatpak-builder --force-clean --repo=repo build-dir com.evolveapp.desktop.yml
           flatpak build-bundle repo EvolveApp.flatpak com.evolveapp.desktop

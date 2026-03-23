@@ -21,49 +21,20 @@ finish-args:
   - --filesystem=xdg-download
   # Secret storage (for login session persistence)
   - --talk-name=org.freedesktop.secrets
-  # GPU acceleration for WebView
-  - --device=dri
   # Allow opening URLs in system browser
   - --talk-name=org.freedesktop.portal.OpenURI
 modules:
-  - name: libayatana-appindicator
-    buildsystem: cmake-ninja
-    config-opts:
-      - -DENABLE_BINDINGS_MONO=NO
-      - -DENABLE_BINDINGS_VALA=NO
-    sources:
-      - type: git
-        url: https://github.com/AyatanaIndicators/libayatana-appindicator.git
-        tag: 0.5.93
-    modules:
-      - name: libayatana-indicator
-        buildsystem: cmake-ninja
-        sources:
-          - type: git
-            url: https://github.com/AyatanaIndicators/libayatana-indicator.git
-            tag: 0.9.4
-      - name: libdbusmenu-gtk3
-        buildsystem: autotools
-        config-opts:
-          - --with-gtk=3
-          - --disable-dumper
-          - --disable-tests
-          - --disable-gtk-doc
-        build-options:
-          env:
-            HAVE_VALGRIND_FALSE: '#'
-            HAVE_VALGRIND_TRUE: ''
-        sources:
-          - type: archive
-            url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
-            sha256: b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a
-
   - name: evolve-desktop
     buildsystem: simple
     build-commands:
       - install -Dm755 evolve-desktop /app/bin/evolve-desktop
       - install -Dm644 icon.png /app/share/icons/hicolor/192x192/apps/com.evolveapp.desktop.png
       - install -Dm644 com.evolveapp.desktop.desktop /app/share/applications/com.evolveapp.desktop.desktop
+      # Bundle system tray libraries
+      - if [ -f libayatana-appindicator3.so.1 ]; then install -Dm755 libayatana-appindicator3.so.1 /app/lib/libayatana-appindicator3.so.1; fi
+      - if [ -f libayatana-indicator3.so.7 ]; then install -Dm755 libayatana-indicator3.so.7 /app/lib/libayatana-indicator3.so.7; fi
+      - if [ -f libdbusmenu-glib.so.4 ]; then install -Dm755 libdbusmenu-glib.so.4 /app/lib/libdbusmenu-glib.so.4; fi
+      - if [ -f libdbusmenu-gtk3.so.4 ]; then install -Dm755 libdbusmenu-gtk3.so.4 /app/lib/libdbusmenu-gtk3.so.4; fi
     sources:
       - type: file
         path: evolve-desktop
@@ -71,3 +42,11 @@ modules:
         path: icon.png
       - type: file
         path: com.evolveapp.desktop.desktop
+      - type: file
+        path: libayatana-appindicator3.so.1
+      - type: file
+        path: libayatana-indicator3.so.7
+      - type: file
+        path: libdbusmenu-glib.so.4
+      - type: file
+        path: libdbusmenu-gtk3.so.4
