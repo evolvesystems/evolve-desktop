@@ -83,7 +83,7 @@ jobs:
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
             name: windows
-          - os: macos-latest
+          - os: macos-13
             rust_target: x86_64-apple-darwin
             name: macos-intel
           - os: macos-latest
@@ -214,7 +214,7 @@ jobs:
 
       # macOS code signing + notarization (handles both proper cert and ad-hoc fallback)
       - name: Sign macOS app
-        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         continue-on-error: true
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -250,7 +250,7 @@ jobs:
 
       # Rebuild DMG after signing
       - name: Rebuild DMG with signed app
-        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         run: |
           DMG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
           APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
@@ -265,7 +265,7 @@ jobs:
 
       # Notarize DMG with Apple (optional — skipped if no Apple ID configured)
       - name: Notarize macOS DMG
-        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         continue-on-error: true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -289,7 +289,7 @@ jobs:
 
       # Clean up temporary keychain
       - name: Clean up keychain
-        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         run: |
           if [ -n "$KEYCHAIN_PATH" ] && [ -f "$KEYCHAIN_PATH" ]; then
             security delete-keychain "$KEYCHAIN_PATH" || true
@@ -346,7 +346,7 @@ jobs:
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/**/*.json
 
       - name: Upload artifacts (macOS)
-        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
+        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.platform.rust_target }}
