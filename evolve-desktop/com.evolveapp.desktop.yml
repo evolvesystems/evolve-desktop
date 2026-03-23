@@ -10,31 +10,26 @@ finish-args:
   - --socket=wayland
   - --socket=pulseaudio
   - --device=dri
-  # Notifications & system tray
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.kde.StatusNotifierWatcher
   - --talk-name=org.freedesktop.portal.Desktop
   - --talk-name=org.freedesktop.portal.FileChooser
-  # File downloads + autostart + deep links
+  - --talk-name=org.freedesktop.portal.OpenURI
+  - --talk-name=org.freedesktop.secrets
   - --filesystem=xdg-config
   - --filesystem=xdg-data
   - --filesystem=xdg-download
-  # Secret storage (for login session persistence)
-  - --talk-name=org.freedesktop.secrets
-  # Allow opening URLs in system browser
-  - --talk-name=org.freedesktop.portal.OpenURI
 modules:
+  # System tray support via Flathub shared modules
+  - shared-modules/libayatana-appindicator/libayatana-appindicator-gtk3.json
+
+  # The app binary
   - name: evolve-desktop
     buildsystem: simple
     build-commands:
       - install -Dm755 evolve-desktop /app/bin/evolve-desktop
       - install -Dm644 icon.png /app/share/icons/hicolor/192x192/apps/com.evolveapp.desktop.png
       - install -Dm644 com.evolveapp.desktop.desktop /app/share/applications/com.evolveapp.desktop.desktop
-      # Bundle system tray libraries
-      - if [ -f libayatana-appindicator3.so.1 ]; then install -Dm755 libayatana-appindicator3.so.1 /app/lib/libayatana-appindicator3.so.1; fi
-      - if [ -f libayatana-indicator3.so.7 ]; then install -Dm755 libayatana-indicator3.so.7 /app/lib/libayatana-indicator3.so.7; fi
-      - if [ -f libdbusmenu-glib.so.4 ]; then install -Dm755 libdbusmenu-glib.so.4 /app/lib/libdbusmenu-glib.so.4; fi
-      - if [ -f libdbusmenu-gtk3.so.4 ]; then install -Dm755 libdbusmenu-gtk3.so.4 /app/lib/libdbusmenu-gtk3.so.4; fi
     sources:
       - type: file
         path: evolve-desktop
@@ -42,11 +37,3 @@ modules:
         path: icon.png
       - type: file
         path: com.evolveapp.desktop.desktop
-      - type: file
-        path: libayatana-appindicator3.so.1
-      - type: file
-        path: libayatana-indicator3.so.7
-      - type: file
-        path: libdbusmenu-glib.so.4
-      - type: file
-        path: libdbusmenu-gtk3.so.4

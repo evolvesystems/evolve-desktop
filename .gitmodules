@@ -1,0 +1,3 @@
+[submodule "evolve-desktop/shared-modules"]
+	path = evolve-desktop/shared-modules
+	url = https://github.com/flathub/shared-modules.git
