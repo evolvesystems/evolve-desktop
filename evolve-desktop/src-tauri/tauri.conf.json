@@ -55,20 +55,8 @@
         "fullscreen": false,
         "decorations": true,
         "center": true,
-        "visible": false,
+        "visible": true,
         "userAgent": "EvolveApp/2.2.19 Tauri/2"
-      },
-      {
-        "label": "splash",
-        "title": "EvolveApp",
-        "url": "splash.html",
-        "width": 400,
-        "height": 300,
-        "resizable": false,
-        "decorations": false,
-        "center": true,
-        "alwaysOnTop": true,
-        
       }
     ],
     "security": {

@@ -75,21 +75,6 @@ fn main() {
             // Load the unified sidebar on every page
             let _ = webview.eval(SIDEBAR_LOADER_JS);
 
-            // Close splash screen when main window finishes loading
-            if webview.label() == "main" {
-                if let tauri::webview::PageLoadEvent::Finished = payload.event() {
-                    let app = webview.app_handle();
-                    // Show main window
-                    if let Some(main_win) = app.get_webview_window("main") {
-                        let _ = main_win.show();
-                        let _ = main_win.set_focus();
-                    }
-                    // Close splash
-                    if let Some(splash) = app.get_webview_window("splash") {
-                        let _ = splash.close();
-                    }
-                }
-            }
         })
         .setup(|app| {
             // --- Deep link handler ---
