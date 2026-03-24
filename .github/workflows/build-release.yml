@@ -136,6 +136,13 @@ jobs:
         working-directory: evolve-desktop
         run: npm ci
 
+      - name: Download latest sidebar JS from server
+        if: steps.should_build.outputs.build == 'true'
+        shell: bash
+        run: |
+          curl -sL "https://evolvepreneuriq.app/js/desktop-sidebar.js" -o evolve-desktop/src-tauri/src/sidebar.js
+          echo "Downloaded sidebar.js: $(wc -c < evolve-desktop/src-tauri/src/sidebar.js) bytes"
+
       - name: Generate app icons from tenant favicon
         if: steps.should_build.outputs.build == 'true'
         shell: bash

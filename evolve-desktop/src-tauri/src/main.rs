@@ -29,35 +29,15 @@ fn navigate_to(app: &tauri::AppHandle, path: &str) {
     }
 }
 
-/// JS injected on every page load:
-/// 1. Immediately reserves 56px sidebar space + dark placeholder (no flash)
-/// 2. Loads the full sidebar script which replaces the placeholder
-const SIDEBAR_LOADER_JS: &str = r#"
-(function() {
-    // 1. Reserve sidebar space IMMEDIATELY — prevents layout shift
-    if (!document.getElementById('desktop-sidebar-reserve')) {
-        var style = document.createElement('style');
-        style.id = 'desktop-sidebar-reserve';
-        style.textContent = 'body{margin-left:56px !important}' +
-            '#desktop-sidebar-placeholder{position:fixed;top:0;left:0;bottom:0;width:56px;' +
-            'background:oklch(0.21 0.006 285.88);z-index:99998}' +
-            '.navbar,.sticky,.fixed-top,[class*="sticky"]{left:56px !important;width:calc(100% - 56px) !important}';
-        (document.head || document.documentElement).appendChild(style);
+/// Full sidebar JS bundled at compile time — no network request needed.
+/// Falls back to remote load if the bundled version fails.
+const SIDEBAR_JS: &str = include_str!("sidebar.js");
 
-        var ph = document.createElement('div');
-        ph.id = 'desktop-sidebar-placeholder';
-        (document.body || document.documentElement).appendChild(ph);
-    }
-
-    // 2. Load full sidebar script (replaces placeholder with interactive sidebar)
-    if (!document.getElementById('desktop-sidebar') && !document.getElementById('desktop-sidebar-loader')) {
-        var s = document.createElement('script');
-        s.id = 'desktop-sidebar-loader';
-        s.src = 'https://evolvepreneuriq.app/js/desktop-sidebar.js?v=' + Date.now();
-        document.head.appendChild(s);
-    }
-})();
-"#;
+/// CSS injected immediately to reserve sidebar space (prevents layout shift)
+const SIDEBAR_CSS: &str = "body{margin-left:56px !important}\
+#desktop-sidebar-placeholder{position:fixed;top:0;left:0;bottom:0;width:56px;\
+background:oklch(0.21 0.006 285.88);z-index:99998}\
+.navbar,.sticky,.fixed-top,[class*=\"sticky\"]{left:56px !important;width:calc(100% - 56px) !important}";
 
 fn main() {
     tauri::Builder::default()
@@ -71,10 +51,16 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![get_app_version])
-        .on_page_load(|webview, payload| {
-            // Load the unified sidebar on every page
-            let _ = webview.eval(SIDEBAR_LOADER_JS);
+        .on_page_load(|webview, _payload| {
+            // 1. Inject CSS immediately — reserves 56px sidebar space, prevents layout shift
+            let css_js = format!(
+                "if(!document.getElementById('desktop-sidebar-reserve')){{var s=document.createElement('style');s.id='desktop-sidebar-reserve';s.textContent={};(document.head||document.documentElement).appendChild(s);var p=document.createElement('div');p.id='desktop-sidebar-placeholder';(document.body||document.documentElement).appendChild(p)}}",
+                serde_json::to_string(SIDEBAR_CSS).unwrap_or_default()
+            );
+            let _ = webview.eval(&css_js);
 
+            // 2. Inject full sidebar JS (bundled at compile time — instant, no network)
+            let _ = webview.eval(SIDEBAR_JS);
         })
         .setup(|app| {
             // --- Deep link handler ---
