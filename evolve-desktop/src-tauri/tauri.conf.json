@@ -62,13 +62,13 @@
         "label": "splash",
         "title": "EvolveApp",
         "url": "splash.html",
-        "width": 480,
-        "height": 360,
+        "width": 400,
+        "height": 300,
         "resizable": false,
         "decorations": false,
         "center": true,
         "alwaysOnTop": true,
-        "transparent": true
+        
       }
     ],
     "security": {
