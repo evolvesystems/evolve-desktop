@@ -56,7 +56,7 @@
         "decorations": true,
         "center": true,
         "visible": true,
-        "userAgent": "EvolveApp/2.2.20 Tauri/2"
+        "userAgent": "EvolveApp/2.2.21 Tauri/2"
       }
     ],
     "security": {
