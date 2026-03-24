@@ -46,8 +46,10 @@
     ];
 
     // --- State ---
-    var tabs = DEFAULT_TABS;
-    var tabsLoadedFromServer = false;  // prevents saving defaults over real data
+    // Use cached tabs from Tauri (injected before this script) or fall back to defaults
+    var tabs = (window.__EVOLVEAPP_CACHED_TABS__ && Array.isArray(window.__EVOLVEAPP_CACHED_TABS__))
+        ? window.__EVOLVEAPP_CACHED_TABS__ : DEFAULT_TABS;
+    var tabsLoadedFromServer = !!window.__EVOLVEAPP_CACHED_TABS__;  // cached counts as loaded
     var configOpen = false;
     var isEiqDomain = window.location.hostname.indexOf('evolvepreneuriq.app') !== -1
         && window.location.hostname.indexOf('dashboard.') === -1;
@@ -719,6 +721,11 @@
                 if (ud.value && Array.isArray(ud.value)) { tabs = ud.value; tabsLoadedFromServer = true; }
             }
         } catch(e) {}
+
+        // Cache tabs locally via Tauri so external sites have the right tabs
+        if (tabsLoadedFromServer && window.__TAURI_INTERNALS__) {
+            try { window.__TAURI_INTERNALS__.invoke('save_cached_tabs', {tabsJson: JSON.stringify(tabs)}); } catch(e) {}
+        }
 
         // Build sidebar shell + tab buttons
         buildSidebar();

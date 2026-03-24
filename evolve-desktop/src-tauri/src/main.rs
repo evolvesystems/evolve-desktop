@@ -11,12 +11,27 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
+use std::sync::Mutex;
+use std::fs;
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
 
 #[tauri::command]
 async fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+async fn save_cached_tabs(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join("sidebar_tabs.json"), &tabs_json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn load_cached_tabs(app: &tauri::App) -> Option<String> {
+    let dir = app.path().app_data_dir().ok()?;
+    fs::read_to_string(dir.join("sidebar_tabs.json")).ok()
 }
 
 /// Navigate the main webview window to a given path.
@@ -50,7 +65,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_app_version])
+        .invoke_handler(tauri::generate_handler![get_app_version, save_cached_tabs])
         .on_page_load(|webview, _payload| {
             // 1. Inject CSS immediately — reserves 56px sidebar space, prevents layout shift
             let css_js = format!(
@@ -59,7 +74,16 @@ fn main() {
             );
             let _ = webview.eval(&css_js);
 
-            // 2. Inject full sidebar JS (bundled at compile time — instant, no network)
+            // 2. Inject cached tabs (from local file) so external sites have the right tabs
+            let app = webview.app_handle();
+            if let Ok(dir) = app.path().app_data_dir() {
+                if let Ok(cached) = fs::read_to_string(dir.join("sidebar_tabs.json")) {
+                    let inject = format!("window.__EVOLVEAPP_CACHED_TABS__={};", cached);
+                    let _ = webview.eval(&inject);
+                }
+            }
+
+            // 3. Inject full sidebar JS (bundled at compile time — instant, no network)
             let _ = webview.eval(SIDEBAR_JS);
         })
         .setup(|app| {
