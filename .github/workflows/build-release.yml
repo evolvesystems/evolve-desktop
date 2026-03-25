@@ -83,7 +83,7 @@ jobs:
           - os: windows-latest
             rust_target: x86_64-pc-windows-msvc
             name: windows
-          - os: macos-14
+          - os: macos-13
             rust_target: x86_64-apple-darwin
             name: macos-intel
           - os: macos-latest
