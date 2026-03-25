@@ -213,7 +213,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: evolve-desktop
-          args: --target ${{ matrix.platform.rust_target }}
+          args: --target ${{ matrix.platform.rust_target }} ${{ matrix.platform.name == 'macos-intel' && '--bundles app' || '' }}
           releaseId: 0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -298,20 +298,29 @@ jobs:
             codesign --force --deep --sign - "$APP_BUNDLE"
           fi
 
-      # Rebuild DMG after signing
-      - name: Rebuild DMG with signed app
+      # Create or rebuild DMG with signed app
+      - name: Create DMG with signed app
         if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         run: |
-          DMG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
           APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
-          if [ -n "$DMG_FILE" ] && [ -n "$APP_BUNDLE" ]; then
-            echo "Rebuilding DMG with signed app..."
-            DMG_NAME=$(basename "$DMG_FILE")
-            DMG_DIR=$(dirname "$DMG_FILE")
-            rm -f "$DMG_FILE"
-            hdiutil create -volname "EvolveApp" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_DIR/$DMG_NAME"
-            echo "DMG rebuilt: $DMG_DIR/$DMG_NAME"
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "No .app bundle found — skipping DMG creation"
+            exit 0
           fi
+
+          # Determine DMG output path
+          VERSION=$(jq -r '.version' evolve-desktop/src-tauri/tauri.conf.json)
+          ARCH="${{ matrix.platform.rust_target == 'x86_64-apple-darwin' && 'x64' || 'aarch64' }}"
+          DMG_DIR="evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg"
+          mkdir -p "$DMG_DIR"
+          DMG_FILE="$DMG_DIR/EvolveApp_${VERSION}_${ARCH}.dmg"
+
+          # Remove existing DMG if present
+          rm -f "$DMG_DIR"/*.dmg
+
+          echo "Creating DMG: $DMG_FILE"
+          hdiutil create -volname "EvolveApp" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_FILE"
+          echo "DMG created: $(ls -lh "$DMG_FILE")"
 
       # Notarize DMG with Apple (required for Gatekeeper to trust the app)
       - name: Notarize macOS DMG

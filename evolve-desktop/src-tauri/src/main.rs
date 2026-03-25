@@ -11,7 +11,6 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
-use std::sync::Mutex;
 use std::fs;
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
@@ -27,11 +26,6 @@ async fn save_cached_tabs(app: tauri::AppHandle, tabs_json: String) -> Result<()
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join("sidebar_tabs.json"), &tabs_json).map_err(|e| e.to_string())?;
     Ok(())
-}
-
-fn load_cached_tabs(app: &tauri::App) -> Option<String> {
-    let dir = app.path().app_data_dir().ok()?;
-    fs::read_to_string(dir.join("sidebar_tabs.json")).ok()
 }
 
 /// Navigate the main webview window to a given path.
