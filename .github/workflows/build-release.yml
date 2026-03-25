@@ -256,17 +256,24 @@ jobs:
           # Add to search list (don't set as default — that breaks other steps)
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
-          # Verify identity is available
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          # Find the signing identity from the imported cert
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -o '"[^"]*"' | head -1 | tr -d '"')
+          if [ -z "$IDENTITY" ]; then
+            echo "ERROR: No codesigning identity found in imported certificate!"
+            echo "This means the .p12 doesn't contain a Developer ID Application cert."
+            security find-identity -v "$KEYCHAIN_PATH"
+            echo "has_cert=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
+          echo "Found signing identity: $IDENTITY"
           echo "has_cert=true" >> $GITHUB_OUTPUT
           echo "keychain_path=$KEYCHAIN_PATH" >> $GITHUB_OUTPUT
+          echo "signing_identity=$IDENTITY" >> $GITHUB_OUTPUT
           echo "Certificate imported successfully"
 
       - name: Sign macOS app
         if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
           APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
           if [ -z "$APP_BUNDLE" ]; then
@@ -274,10 +281,11 @@ jobs:
             exit 0
           fi
 
-          if [ "${{ steps.keychain.outputs.has_cert }}" = "true" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
-            echo "Signing with Developer ID: $APPLE_SIGNING_IDENTITY"
+          if [ "${{ steps.keychain.outputs.has_cert }}" = "true" ]; then
+            IDENTITY="${{ steps.keychain.outputs.signing_identity }}"
+            echo "Signing with: $IDENTITY"
             codesign --force --options runtime --deep \
-              --sign "$APPLE_SIGNING_IDENTITY" \
+              --sign "$IDENTITY" \
               --entitlements evolve-desktop/src-tauri/Entitlements.plist \
               --timestamp \
               "$APP_BUNDLE"
