@@ -210,14 +210,28 @@ jobs:
 
       - name: Build Tauri app
         if: steps.should_build.outputs.build == 'true'
-        uses: tauri-apps/tauri-action@v0
-        with:
-          projectPath: evolve-desktop
-          args: --target ${{ matrix.platform.rust_target }} ${{ matrix.platform.name == 'macos-intel' && '--bundles app' || '' }}
-          releaseId: 0
+        working-directory: evolve-desktop
+        shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ "${{ matrix.platform.name }}" = "macos-intel" ]; then
+            echo "Cross-compiling for x86_64 on ARM — app bundle only (DMG created after signing)"
+            npx tauri build --target x86_64-apple-darwin --bundles app
+          else
+            npx tauri build --target ${{ matrix.platform.rust_target }}
+          fi
+
+          # Verify the binary architecture
+          if [[ "${{ matrix.platform.os }}" == macos* ]]; then
+            BINARY=$(find src-tauri/target/${{ matrix.platform.rust_target }}/release -name "evolve-desktop" -not -path "*/bundle/*" -not -path "*/deps/*" | head -1)
+            if [ -n "$BINARY" ]; then
+              echo "Binary architecture:"
+              file "$BINARY"
+              lipo -info "$BINARY" 2>/dev/null || true
+            fi
+          fi
 
       # macOS code signing: import Developer ID cert into temp keychain and sign
       - name: Import Apple certificate
