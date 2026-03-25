@@ -84,7 +84,12 @@ fn main() {
             }
 
             // 3. Inject full sidebar JS (bundled at compile time — instant, no network)
-            let _ = webview.eval(SIDEBAR_JS);
+            // If eval fails (too large, syntax issue), fall back to remote load
+            if webview.eval(SIDEBAR_JS).is_err() {
+                let _ = webview.eval(
+                    "if(!document.getElementById('desktop-sidebar-loader')){var s=document.createElement('script');s.id='desktop-sidebar-loader';s.src='https://evolvepreneuriq.app/js/desktop-sidebar.js?v='+Date.now();document.head.appendChild(s)}"
+                );
+            }
         })
         .setup(|app| {
             // --- Deep link handler ---
