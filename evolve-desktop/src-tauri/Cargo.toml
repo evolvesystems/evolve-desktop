@@ -1,6 +1,6 @@
 [package]
 name = "evolve-desktop"
-version = "2.2.31"
+version = "2.2.32"
 description = "EvolveApp - Desktop wrapper for evolvepreneuriq.app"
 authors = ["EvolveApp Team"]
 edition = "2021"

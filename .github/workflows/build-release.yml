@@ -304,7 +304,7 @@ jobs:
             codesign --force --deep --sign - "$APP_BUNDLE"
           fi
 
-      # Create or rebuild DMG with signed app
+      # Create polished DMG with drag-to-Applications layout
       - name: Create DMG with signed app
         if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         run: |
@@ -314,18 +314,37 @@ jobs:
             exit 0
           fi
 
-          # Determine DMG output path
           VERSION=$(jq -r '.version' evolve-desktop/src-tauri/tauri.conf.json)
-          ARCH="universal"
           DMG_DIR="evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg"
           mkdir -p "$DMG_DIR"
-          DMG_FILE="$DMG_DIR/EvolveApp_${VERSION}_${ARCH}.dmg"
-
-          # Remove existing DMG if present
+          DMG_FILE="$DMG_DIR/EvolveApp_${VERSION}_universal.dmg"
           rm -f "$DMG_DIR"/*.dmg
 
-          echo "Creating DMG: $DMG_FILE"
-          hdiutil create -volname "EvolveApp" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_FILE"
+          # Install create-dmg for polished DMG with Applications shortcut
+          brew install create-dmg || true
+
+          create-dmg \
+            --volname "EvolveApp" \
+            --volicon "evolve-desktop/src-tauri/icons/icon.icns" \
+            --window-pos 200 120 \
+            --window-size 660 400 \
+            --icon-size 80 \
+            --icon "EvolveApp.app" 180 170 \
+            --app-drop-link 480 170 \
+            --hide-extension "EvolveApp.app" \
+            --no-internet-enable \
+            "$DMG_FILE" \
+            "$APP_BUNDLE" \
+          || {
+            # Fallback: basic DMG with Applications symlink
+            echo "create-dmg failed — falling back to hdiutil with Applications symlink"
+            STAGING="${RUNNER_TEMP}/dmg-staging"
+            mkdir -p "$STAGING"
+            cp -R "$APP_BUNDLE" "$STAGING/"
+            ln -s /Applications "$STAGING/Applications"
+            hdiutil create -volname "EvolveApp" -srcfolder "$STAGING" -ov -format UDZO "$DMG_FILE"
+          }
+
           echo "DMG created: $(ls -lh "$DMG_FILE")"
 
       # Notarize DMG with Apple (required for Gatekeeper to trust the app)
