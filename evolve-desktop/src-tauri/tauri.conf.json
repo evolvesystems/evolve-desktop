@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "productName": "EvolveApp",
-  "version": "2.2.22",
+  "version": "2.2.23",
   "identifier": "com.evolveapp.desktop",
   "build": {
     "beforeDevCommand": "",
@@ -56,7 +56,7 @@
         "decorations": true,
         "center": true,
         "visible": true,
-        "userAgent": "EvolveApp/2.2.22 Tauri/2"
+        "userAgent": "EvolveApp/2.2.23 Tauri/2"
       }
     ],
     "security": {
