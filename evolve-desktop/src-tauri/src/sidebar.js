@@ -708,23 +708,32 @@
     // =========================================================================
 
     async function loadAndRender() {
-        // Always try to load tabs from API (use absolute URL if on external domain)
-        try {
-            var tr = await fetch(apiBase + '/api/v1/desktop/settings/tenant-defaults/sidebar_tabs', {credentials:'include'});
-            if (tr.ok && !isHtmlLoginRedirect(tr)) {
-                var td = await tr.json();
-                if (td.value && Array.isArray(td.value)) { tabs = td.value; tabsLoadedFromServer = true; }
-            }
-            var ur = await fetch(apiBase + '/api/v1/desktop/settings/sidebar_tabs', {credentials:'include'});
-            if (ur.ok && !isHtmlLoginRedirect(ur)) {
-                var ud = await ur.json();
-                if (ud.value && Array.isArray(ud.value)) { tabs = ud.value; tabsLoadedFromServer = true; }
-            }
-        } catch(e) {}
+        // On external domains, API calls will fail (no cookies for evolvepreneuriq.app).
+        // If we have cached tabs from Tauri, trust them and skip the API call.
+        var hasCachedTabs = window.__EVOLVEAPP_CACHED_TABS__ && Array.isArray(window.__EVOLVEAPP_CACHED_TABS__);
 
-        // Cache tabs locally via Tauri so external sites have the right tabs
-        if (tabsLoadedFromServer && window.__TAURI_INTERNALS__) {
-            try { window.__TAURI_INTERNALS__.invoke('save_cached_tabs', {tabsJson: JSON.stringify(tabs)}); } catch(e) {}
+        if (onEiq) {
+            // On EIQ domain: load fresh tabs from API
+            try {
+                var tr = await fetch(apiBase + '/api/v1/desktop/settings/tenant-defaults/sidebar_tabs', {credentials:'include'});
+                if (tr.ok && !isHtmlLoginRedirect(tr)) {
+                    var td = await tr.json();
+                    if (td.value && Array.isArray(td.value)) { tabs = td.value; tabsLoadedFromServer = true; }
+                }
+                var ur = await fetch(apiBase + '/api/v1/desktop/settings/sidebar_tabs', {credentials:'include'});
+                if (ur.ok && !isHtmlLoginRedirect(ur)) {
+                    var ud = await ur.json();
+                    if (ud.value && Array.isArray(ud.value)) { tabs = ud.value; tabsLoadedFromServer = true; }
+                }
+            } catch(e) {}
+
+            // Cache tabs locally via Tauri so external sites have the right tabs
+            if (tabsLoadedFromServer && window.__TAURI_INTERNALS__) {
+                try { window.__TAURI_INTERNALS__.invoke('save_cached_tabs', {tabsJson: JSON.stringify(tabs)}); } catch(e) {}
+            }
+        } else if (hasCachedTabs) {
+            // On external domain: use cached tabs (already loaded at line 50), mark as loaded
+            tabsLoadedFromServer = true;
         }
 
         // Build sidebar shell + tab buttons
