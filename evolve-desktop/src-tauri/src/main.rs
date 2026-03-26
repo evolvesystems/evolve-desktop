@@ -158,21 +158,14 @@ fn main() {
             )?;
 
             // Content webview — loads the web app
+            // on_page_load must be set on the builder BEFORE add_child()
+            let app_handle = app.handle().clone();
             let content_builder = tauri::webview::WebviewBuilder::new(
                 "content",
                 WebviewUrl::External(APP_URL.parse().unwrap()),
             )
-            .user_agent(&format!("EvolveApp/{} Tauri/2", env!("CARGO_PKG_VERSION")));
-
-            let content = window.add_child(
-                content_builder,
-                tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0),
-                tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
-            )?;
-
-            // On content page load: emit URL + fetch badges/tabs
-            let app_handle = app.handle().clone();
-            content.on_page_load(move |webview: &tauri::Webview, payload: &tauri::webview::PageLoadPayload<'_>| {
+            .user_agent(&format!("EvolveApp/{} Tauri/2", env!("CARGO_PKG_VERSION")))
+            .on_page_load(move |webview, payload| {
                 if payload.event() != PageLoadEvent::Finished {
                     return;
                 }
@@ -207,6 +200,12 @@ fn main() {
                     })();
                 "#);
             });
+
+            let _content = window.add_child(
+                content_builder,
+                tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0),
+                tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
+            )?;
 
             // Window resize handler
             let app_handle2 = app.handle().clone();
