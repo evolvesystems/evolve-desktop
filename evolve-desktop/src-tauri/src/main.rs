@@ -82,15 +82,18 @@ async fn content_reload(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn toggle_sidebar_config(app: tauri::AppHandle, open: bool) -> Result<(), String> {
     let win = app.get_window("main").ok_or("Window not found")?;
-    let size = win.inner_size().map_err(|e| e.to_string())?;
+    let phys = win.inner_size().map_err(|e| e.to_string())?;
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let w = phys.width as f64 / scale;
+    let h = phys.height as f64 / scale;
     let sw = if open { SIDEBAR_EXPANDED } else { SIDEBAR_WIDTH };
 
     if let Some(sb) = app.get_webview("sidebar") {
-        let _ = sb.set_size(tauri::LogicalSize::new(sw, size.height as f64));
+        let _ = sb.set_size(tauri::LogicalSize::new(sw, h));
     }
     if let Some(ct) = app.get_webview("content") {
         let _ = ct.set_position(tauri::LogicalPosition::new(sw, 0.0));
-        let _ = ct.set_size(tauri::LogicalSize::new((size.width as f64 - sw).max(100.0), size.height as f64));
+        let _ = ct.set_size(tauri::LogicalSize::new((w - sw).max(100.0), h));
     }
     Ok(())
 }
@@ -141,9 +144,9 @@ fn main() {
                 .visible(false)
                 .build()?;
 
-            let size = window.inner_size()?;
-            let w = size.width as f64;
-            let h = size.height as f64;
+            // Use the logical size we set (not physical which is 2x on Retina)
+            let w: f64 = 1400.0;
+            let h: f64 = 900.0;
 
             // Sidebar webview — local HTML, never navigates
             let sidebar_builder = tauri::webview::WebviewBuilder::new(
@@ -209,10 +212,13 @@ fn main() {
 
             // Window resize handler
             let app_handle2 = app.handle().clone();
+            let window_clone = window.clone();
             window.on_window_event(move |event| {
-                if let tauri::WindowEvent::Resized(size) = event {
-                    let h = size.height as f64;
-                    let w = size.width as f64;
+                if let tauri::WindowEvent::Resized(phys) = event {
+                    // Convert physical pixels to logical using scale factor
+                    let scale = window_clone.scale_factor().unwrap_or(1.0);
+                    let w = phys.width as f64 / scale;
+                    let h = phys.height as f64 / scale;
                     if let Some(sb) = app_handle2.get_webview("sidebar") {
                         let _ = sb.set_size(tauri::LogicalSize::new(SIDEBAR_WIDTH, h));
                     }
