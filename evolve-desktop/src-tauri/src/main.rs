@@ -60,7 +60,15 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![get_app_version, save_cached_tabs])
-        .on_page_load(|webview, _payload| {
+        .on_page_load(|webview, payload| {
+            // Only run on page finished loading (not on started)
+            if payload.event() != tauri::webview::PageLoadEvent::Finished {
+                return;
+            }
+
+            // Show the window now that content is ready (starts hidden to avoid white flash)
+            let _ = webview.window().show();
+
             // 1. Inject CSS immediately — reserves 56px sidebar space, prevents layout shift
             let css_js = format!(
                 "if(!document.getElementById('desktop-sidebar-reserve')){{var s=document.createElement('style');s.id='desktop-sidebar-reserve';s.textContent={};(document.head||document.documentElement).appendChild(s);var p=document.createElement('div');p.id='desktop-sidebar-placeholder';(document.body||document.documentElement).appendChild(p)}}",
