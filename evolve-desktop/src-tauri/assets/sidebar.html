@@ -72,6 +72,12 @@ body::-webkit-scrollbar { width:0; }
 
 /* Save indicator */
 #save-indicator { position:fixed; top:8px; left:60px; z-index:30; padding:4px 12px; border-radius:6px; font-size:11px; opacity:0; transition:opacity 0.3s; pointer-events:none; }
+
+/* Loading indicator */
+#loading-bar { position:fixed; top:0; left:0; right:0; height:2px; background:#3b82f6; z-index:50; transform:scaleX(0); transform-origin:left; transition:transform 0.3s ease; }
+#loading-bar.loading { transform:scaleX(0.7); transition:transform 8s cubic-bezier(0.1, 0.05, 0, 1); }
+#loading-bar.done { transform:scaleX(1); transition:transform 0.2s ease; }
+#loading-bar.hidden { opacity:0; transition:opacity 0.3s ease 0.2s; }
 </style>
 </head>
 <body>
@@ -116,6 +122,7 @@ body::-webkit-scrollbar { width:0; }
   </div>
 </div>
 
+<div id="loading-bar"></div>
 <div id="save-indicator"></div>
 
 <script>
@@ -158,6 +165,20 @@ var tabs = DEFAULT_TABS;
 var currentUrl = '';
 var configOpen = false;
 
+// Loading indicator
+function showLoading() {
+    var bar = document.getElementById('loading-bar');
+    bar.className = '';
+    void bar.offsetWidth; // force reflow
+    bar.className = 'loading';
+}
+function hideLoading() {
+    var bar = document.getElementById('loading-bar');
+    bar.className = 'done';
+    setTimeout(function() { bar.className = 'done hidden'; }, 200);
+    setTimeout(function() { bar.className = ''; }, 600);
+}
+
 function makeSvg(name) {
     return '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">' + (ICON_SVG[name] || ICON_SVG['squares-2x2']) + '</svg>';
 }
@@ -195,6 +216,7 @@ function renderTabs() {
         }
 
         btn.onclick = function() {
+            showLoading();
             invoke('navigate_content', { url: url });
         };
 
@@ -363,6 +385,7 @@ if (window.__TAURI_INTERNALS__) {
         event: 'content-navigated',
         handler: function(event) {
             currentUrl = event.payload || '';
+            hideLoading();
             renderTabs();
         }
     }).catch(function() {
@@ -377,6 +400,14 @@ if (window.__TAURI_INTERNALS__) {
             } catch(e) {}
         }, 1000);
     });
+
+    // Listen for loading started
+    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
+        event: 'content-loading',
+        handler: function() {
+            showLoading();
+        }
+    }).catch(function() {});
 
     // Listen for badge updates
     window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
@@ -421,6 +452,7 @@ function updateBadge(tabId, count) {
 
 // Button handlers
 document.getElementById('logo-btn').onclick = function() {
+    showLoading();
     invoke('navigate_content', { url: APP + '/dashboard' });
 };
 document.getElementById('btn-back').onclick = function() {

@@ -171,8 +171,14 @@ fn main() {
             )
             .user_agent(&format!("EvolveApp/{} Tauri/2", env!("CARGO_PKG_VERSION")))
             .on_page_load(move |webview, payload| {
-                if payload.event() != PageLoadEvent::Finished {
-                    return;
+                match payload.event() {
+                    PageLoadEvent::Started => {
+                        // Tell sidebar navigation started (show loading bar)
+                        let _ = app_handle.emit_to("sidebar", "content-loading", true);
+                        return;
+                    }
+                    PageLoadEvent::Finished => {}
+                    _ => return,
                 }
 
                 // Show window on first load
