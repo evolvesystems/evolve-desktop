@@ -144,15 +144,17 @@ fn main() {
                 .visible(false)
                 .build()?;
 
-            // Use the logical size we set (not physical which is 2x on Retina)
-            let w: f64 = 1400.0;
-            let h: f64 = 900.0;
+            // Get logical size (physical / scale factor)
+            let scale = window.scale_factor().unwrap_or(1.0);
+            let phys = window.inner_size()?;
+            let w = phys.width as f64 / scale;
+            let h = phys.height as f64 / scale;
 
             // Sidebar webview — local HTML, never navigates
             let sidebar_builder = tauri::webview::WebviewBuilder::new(
                 "sidebar",
                 WebviewUrl::App("sidebar.html".into()),
-            ).auto_resize();
+            );
 
             let _sidebar = window.add_child(
                 sidebar_builder,
