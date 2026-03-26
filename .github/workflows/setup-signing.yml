@@ -36,13 +36,7 @@ jobs:
           # The private key needs to be the full file content for Tauri
           PRIVKEY=$(cat $RUNNER_TEMP/minisign.key)
 
-          # Save via EIQ Manager's GitHubActionsService (uses stored PAT)
-          PRIVKEY_ENCODED=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.stdin.read()))" < $RUNNER_TEMP/minisign.key)
-          curl -s -X POST "https://evolvepreneuriq.app/api/v1/desktop/save-signing-key" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            -H "X-CI-Token: ${{ secrets.GITHUB_TOKEN }}" \
-            -d "private_key=$PRIVKEY_ENCODED&public_key=$PUBKEY" \
-            && echo "Key saved via EIQ API" || echo "EIQ API save failed — upload manually"
+          echo "Private key generated. Add it manually as TAURI_SIGNING_PRIVATE_KEY secret in GitHub repo settings."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
