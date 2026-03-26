@@ -1,21 +1,18 @@
-// Creates dist/index.html that loads the web app in a full-page iframe.
-// This works because Tauri allows iframes to external URLs even when
-// direct navigation from the asset protocol is blocked.
-import { mkdirSync, writeFileSync } from 'fs';
+// Creates dist/ directory with:
+//   - index.html (placeholder — required by Tauri but not used)
+//   - sidebar.html (loaded by the sidebar webview, copied from src-tauri/assets/)
+import { mkdirSync, writeFileSync, copyFileSync } from 'fs';
+
 mkdirSync('dist', { recursive: true });
+
+// Index.html is required by Tauri's frontendDist but not actually used
+// (the content webview loads the remote URL directly)
 writeFileSync('dist/index.html', `<!DOCTYPE html>
-<html style="height:100%;margin:0;padding:0;overflow:hidden">
-<head>
-  <meta charset="UTF-8">
-  <title>EvolveApp</title>
-  <style>
-    * { margin: 0; padding: 0; }
-    html, body { height: 100%; overflow: hidden; }
-    iframe { width: 100%; height: 100%; border: none; }
-  </style>
-</head>
-<body>
-  <iframe src="https://evolvepreneuriq.app" allow="camera;microphone;fullscreen;clipboard-write"></iframe>
-</body>
+<html><head><meta charset="UTF-8"><title>EvolveApp</title></head>
+<body><p>Loading...</p></body>
 </html>`);
-console.log('Created dist/index.html');
+
+// Copy sidebar.html from source to dist
+copyFileSync('src-tauri/assets/sidebar.html', 'dist/sidebar.html');
+
+console.log('Build frontend complete: dist/index.html + dist/sidebar.html');

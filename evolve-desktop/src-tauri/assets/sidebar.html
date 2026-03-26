@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html style="height:100%;margin:0;padding:0">
+<head>
+<meta charset="UTF-8">
+<title>Sidebar</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; overflow:hidden; font-family:system-ui,-apple-system,sans-serif; background:oklch(0.21 0.006 285.88); color:#fff; user-select:none; }
+body { display:flex; flex-direction:column; align-items:center; padding:8px 0; gap:2px; overflow-y:auto; }
+body::-webkit-scrollbar { width:0; }
+
+.logo { width:40px; height:40px; display:flex; align-items:center; justify-content:center; margin-bottom:8px; border-radius:50%; overflow:hidden; text-decoration:none; flex-shrink:0; background:oklch(0.65 0.24 16.57); color:#fff; font-weight:700; font-size:16px; cursor:pointer; }
+.logo img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+
+#tab-container { display:flex; flex-direction:column; align-items:center; gap:2px; width:100%; }
+
+.tab-btn { width:44px; height:44px; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:10px; color:rgba(255,255,255,0.5); background:transparent; text-decoration:none; font-size:9px; gap:2px; transition:all 0.15s; cursor:pointer; border:none; position:relative; }
+.tab-btn:hover { background:oklch(0.30 0.006 285.88); color:rgba(255,255,255,0.85); }
+.tab-btn.active { color:#fff; background:oklch(0.35 0.006 285.88); }
+.tab-btn .icon { font-size:18px; line-height:1; }
+.tab-btn svg { width:20px; height:20px; }
+
+.badge { display:none; position:absolute; top:2px; right:2px; background:#ef4444; color:#fff; font-size:9px; min-width:16px; height:16px; border-radius:8px; text-align:center; line-height:16px; }
+.badge.visible { display:block; }
+
+.spacer { flex:1; }
+
+.bottom-btn { width:44px; height:44px; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:10px; color:rgba(255,255,255,0.3); cursor:pointer; background:none; border:none; font-size:18px; transition:all 0.15s; }
+.bottom-btn:hover { color:#fff; background:oklch(0.30 0.006 285.88); }
+.bottom-btn .label { font-size:8px; opacity:0.6; }
+
+.bottom-btn.gear { margin-bottom:8px; }
+.bottom-btn.gear.open { color:#fff; background:oklch(0.35 0.006 285.88); }
+
+/* Config panel */
+#config-panel { position:fixed; top:0; left:56px; bottom:0; width:260px; background:oklch(0.24 0.006 285.88); display:none; flex-direction:column; font-family:system-ui; color:#fff; box-shadow:4px 0 20px rgba(0,0,0,0.3); z-index:10; overflow-y:auto; }
+#config-panel.open { display:flex; }
+#config-panel .header { padding:16px; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; }
+#config-panel .header h3 { font-size:13px; font-weight:600; color:rgba(255,255,255,0.7); text-transform:uppercase; letter-spacing:0.5px; }
+#config-panel .list { flex:1; overflow-y:auto; padding:8px; display:flex; flex-direction:column; gap:4px; }
+.config-row { display:flex; align-items:center; gap:6px; padding:7px 8px; border-radius:8px; background:oklch(0.30 0.006 285.88); }
+.config-row.disabled { background:oklch(0.22 0.006 285.88); }
+.config-row .grip { color:rgba(255,255,255,0.2); font-size:10px; cursor:grab; }
+.config-row .icon { font-size:14px; }
+.config-row .info { flex:1; min-width:0; }
+.config-row .info .name { display:block; font-size:11px; color:#fff; }
+.config-row.disabled .info .name { color:rgba(255,255,255,0.4); }
+.config-row .info .tier-tag { display:block; font-size:8px; color:rgba(255,255,255,0.25); margin-top:1px; }
+.toggle { width:32px; height:18px; border-radius:9px; border:none; cursor:pointer; position:relative; transition:background 0.2s; flex-shrink:0; }
+.toggle.on { background:#3b82f6; }
+.toggle.off { background:rgba(255,255,255,0.15); }
+.toggle .knob { position:absolute; top:2px; width:14px; height:14px; border-radius:50%; background:#fff; transition:left 0.2s; }
+.toggle.on .knob { left:16px; }
+.toggle.off .knob { left:2px; }
+.lock-icon { color:rgba(255,255,255,0.15); font-size:10px; flex-shrink:0; }
+.del-btn { width:18px; height:18px; border-radius:4px; border:none; background:none; color:rgba(239,68,68,0.6); font-size:11px; cursor:pointer; flex-shrink:0; }
+.del-btn:hover { color:#ef4444; }
+
+/* Add tab form */
+#add-form { padding:12px; border-top:1px solid rgba(255,255,255,0.08); flex-shrink:0; }
+#add-form h4 { font-size:11px; font-weight:600; color:rgba(255,255,255,0.5); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; }
+#add-form input { width:100%; padding:5px 8px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); background:oklch(0.18 0.006 285.88); color:#fff; font-size:11px; font-family:system-ui; margin-bottom:5px; outline:none; }
+#add-form .add-btn { width:100%; padding:7px; border-radius:6px; border:none; background:#3b82f6; color:#fff; font-size:11px; cursor:pointer; font-family:system-ui; }
+#add-form .reset-btn { margin-top:8px; width:100%; padding:7px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); background:none; color:rgba(255,255,255,0.4); font-size:11px; cursor:pointer; font-family:system-ui; }
+
+/* Info popup */
+#info-popup { position:fixed; bottom:60px; left:4px; width:220px; background:oklch(0.22 0.006 285.88); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:14px; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none; }
+#info-popup.open { display:block; }
+#info-popup .title { font-size:13px; font-weight:600; margin-bottom:8px; }
+#info-popup .ver { font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:4px; }
+#info-popup .update-link { display:block; padding:8px; border-radius:8px; background:#3b82f6; color:#fff; text-decoration:none; font-size:11px; text-align:center; font-weight:500; margin-top:8px; }
+
+/* Save indicator */
+#save-indicator { position:fixed; top:8px; left:60px; z-index:30; padding:4px 12px; border-radius:6px; font-size:11px; opacity:0; transition:opacity 0.3s; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<div class="logo" id="logo-btn" title="Dashboard">E</div>
+<div id="tab-container"></div>
+<div class="spacer"></div>
+
+<button class="bottom-btn" id="btn-back" title="Back">&#8592;</button>
+<button class="bottom-btn" id="btn-refresh" title="Refresh">&#8635;</button>
+<button class="bottom-btn" id="btn-copy" title="Copy URL">
+  <span class="icon">&#128279;</span>
+  <span class="label" id="copy-label">Copy</span>
+</button>
+<button class="bottom-btn" id="btn-info" title="App Info">
+  <span class="icon">&#9432;</span>
+  <span class="label" id="version-label">...</span>
+</button>
+<button class="bottom-btn gear" id="btn-settings" title="Configure Sidebar">
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width:20px;height:20px"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.431.992a7.723 7.723 0 0 1 0 .255c-.007.378.138.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z"/><circle cx="12" cy="12" r="3"/></svg>
+</button>
+
+<div id="config-panel">
+  <div class="header"><h3>Sidebar Tabs</h3></div>
+  <div class="list" id="config-list"></div>
+  <div id="add-form">
+    <h4>Add Custom Tab</h4>
+    <input type="text" id="new-label" placeholder="Label" />
+    <input type="text" id="new-url" placeholder="URL (https://... or /path)" />
+    <input type="text" id="new-emoji" placeholder="Emoji icon" maxlength="4" />
+    <button class="add-btn" id="btn-add-tab">Add Tab</button>
+    <button class="reset-btn" id="btn-reset">Reset to Defaults</button>
+  </div>
+</div>
+
+<div id="info-popup">
+  <div class="title">EvolveApp Desktop</div>
+  <div class="ver">Version: <span id="info-current-ver">checking...</span></div>
+  <div class="ver">Latest: <span id="info-latest-ver">checking...</span></div>
+  <div id="info-update-section" style="display:none">
+    <a class="update-link" id="info-update-link" href="#">Download Update</a>
+  </div>
+</div>
+
+<div id="save-indicator"></div>
+
+<script>
+// =====================================================================
+//  EvolveApp Native Sidebar
+//  Runs as a separate webview — communicates with content webview via
+//  Tauri IPC commands. Never destroyed by page navigation.
+// =====================================================================
+
+var APP = 'https://evolvepreneuriq.app';
+var invoke = window.__TAURI_INTERNALS__ ? window.__TAURI_INTERNALS__.invoke : function() { return Promise.resolve(); };
+
+var ICON_SVG = {
+    'squares-2x2': '<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z"/>',
+    'envelope': '<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/>',
+    'chat-bubble-left-right': '<path stroke-linecap="round" stroke-linejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 0 1-.825-.242m9.345-8.334a2.126 2.126 0 0 0-.476-.095 48.64 48.64 0 0 0-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0 0 11.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/>',
+    'users': '<path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z"/>',
+    'calendar': '<path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5"/>',
+    'document-text': '<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/>',
+    'cpu-chip': '<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 15V21m3.75-18v1.5m0 15V21m-9-1.5h10.5a2.25 2.25 0 0 0 2.25-2.25V6.75a2.25 2.25 0 0 0-2.25-2.25H6.75A2.25 2.25 0 0 0 4.5 6.75v10.5a2.25 2.25 0 0 0 2.25 2.25Zm.75-12h9v9h-9v-9Z"/>',
+    'book-open': '<path stroke-linecap="round" stroke-linejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"/>',
+    'server-stack': '<path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 0 6h13.5a3 3 0 1 0 0-6m-16.5-3a3 3 0 0 1 3-3h13.5a3 3 0 0 1 3 3m-19.5 0a4.5 4.5 0 0 1 .9-2.7L5.737 5.1a3.375 3.375 0 0 1 2.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 0 1 .9 2.7m0 0a3 3 0 0 1-3 3m0 3h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Zm-3 6h.008v.008h-.008v-.008Zm0-6h.008v.008h-.008v-.008Z"/>'
+};
+
+var DEFAULT_TABS = [
+    {id:'dashboard', label:'Home', icon:'squares-2x2', url:'/dashboard', enabled:true},
+    {id:'email', label:'Mail', icon:'envelope', url:'/email-manager', enabled:true},
+    {id:'chat', label:'Chat', icon:'chat-bubble-left-right', url:'/chat', enabled:true},
+    {id:'crm', label:'CRM', icon:'users', url:'/crm-marketing/contacts', enabled:true},
+    {id:'calendar', label:'EvolveMeet', icon:'calendar', url:'/evolvemeet', enabled:false},
+    {id:'docs', label:'Docs', icon:'document-text', url:'/evolve-docs', enabled:true},
+    {id:'va', label:'VA', icon:'cpu-chip', url:'/workspace', enabled:false},
+    {id:'books', label:'Books', icon:'book-open', url:'/books/my-books', enabled:false},
+    {id:'epanel', label:'E-Panel', icon:'server-stack', url:'/spanel-hub', enabled:true},
+    {id:'updates', label:'Updates', icon:'custom', emoji:'\u2B07\uFE0F', url:'/download', enabled:false}
+];
+
+// State
+var tabs = DEFAULT_TABS;
+var currentUrl = '';
+var configOpen = false;
+
+function makeSvg(name) {
+    return '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">' + (ICON_SVG[name] || ICON_SVG['squares-2x2']) + '</svg>';
+}
+
+// =====================================================================
+//  TAB RENDERING
+// =====================================================================
+
+function renderTabs() {
+    var container = document.getElementById('tab-container');
+    container.innerHTML = '';
+    var enabled = tabs.filter(function(t) { return t.enabled; });
+
+    enabled.forEach(function(tab) {
+        var btn = document.createElement('button');
+        btn.className = 'tab-btn';
+        btn.title = tab.label;
+
+        var url = tab.url;
+        if (url && !url.startsWith('http')) url = APP + url;
+
+        // Active detection
+        if (currentUrl && currentUrl.indexOf(url) !== -1) {
+            btn.classList.add('active');
+        }
+
+        btn.innerHTML = (tab.emoji ? '<span class="icon">' + tab.emoji + '</span>' : makeSvg(tab.icon)) + '<span>' + tab.label + '</span>';
+
+        // Badge for email/chat
+        if (tab.id === 'email' || tab.id === 'chat') {
+            var badge = document.createElement('span');
+            badge.className = 'badge';
+            badge.id = 'badge-' + tab.id;
+            btn.appendChild(badge);
+        }
+
+        btn.onclick = function() {
+            invoke('navigate_content', { url: url });
+        };
+
+        container.appendChild(btn);
+    });
+}
+
+// =====================================================================
+//  CONFIG PANEL
+// =====================================================================
+
+function renderConfigList() {
+    var list = document.getElementById('config-list');
+    list.innerHTML = '';
+
+    tabs.forEach(function(tab, idx) {
+        var row = document.createElement('div');
+        row.className = 'config-row' + (tab.enabled ? '' : ' disabled');
+
+        // Grip
+        var grip = document.createElement('span');
+        grip.className = 'grip';
+        grip.textContent = '\u2630';
+        row.appendChild(grip);
+
+        // Icon
+        var icon = document.createElement('span');
+        icon.className = 'icon';
+        icon.innerHTML = tab.emoji || (tab.icon !== 'custom' ? makeSvg(tab.icon) : '\u2B50');
+        row.appendChild(icon);
+
+        // Info
+        var info = document.createElement('div');
+        info.className = 'info';
+        var name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = tab.label;
+        info.appendChild(name);
+        if (tab.tier) {
+            var tier = document.createElement('span');
+            tier.className = 'tier-tag';
+            tier.textContent = tab.tier;
+            info.appendChild(tier);
+        }
+        row.appendChild(info);
+
+        // Toggle
+        var toggle = document.createElement('button');
+        toggle.className = 'toggle ' + (tab.enabled ? 'on' : 'off');
+        var knob = document.createElement('span');
+        knob.className = 'knob';
+        toggle.appendChild(knob);
+        toggle.onclick = function() {
+            tab.enabled = !tab.enabled;
+            renderConfigList();
+            renderTabs();
+            saveTabs();
+        };
+        row.appendChild(toggle);
+
+        // Lock or delete
+        if (tab.is_deletable === false) {
+            var lock = document.createElement('span');
+            lock.className = 'lock-icon';
+            lock.textContent = '\uD83D\uDD12';
+            row.appendChild(lock);
+        } else if (tab.custom || tab.tier === 'user') {
+            var del = document.createElement('button');
+            del.className = 'del-btn';
+            del.textContent = '\u2715';
+            del.onclick = function() {
+                tabs.splice(idx, 1);
+                renderConfigList();
+                renderTabs();
+                saveTabs();
+            };
+            row.appendChild(del);
+        }
+
+        list.appendChild(row);
+    });
+}
+
+function toggleConfig() {
+    configOpen = !configOpen;
+    document.getElementById('config-panel').classList.toggle('open', configOpen);
+    document.getElementById('btn-settings').classList.toggle('open', configOpen);
+
+    if (configOpen) {
+        renderConfigList();
+        // Ask Rust to expand sidebar width
+        invoke('toggle_sidebar_config', { open: true });
+    } else {
+        invoke('toggle_sidebar_config', { open: false });
+    }
+}
+
+// =====================================================================
+//  SAVE / LOAD
+// =====================================================================
+
+async function saveTabs() {
+    // Save locally
+    invoke('save_cached_tabs', { tabsJson: JSON.stringify(tabs) });
+
+    // Save to server via content webview
+    invoke('save_tabs_via_content', { tabsJson: JSON.stringify(tabs) });
+
+    showIndicator('Saved', '#22c55e');
+}
+
+async function loadTabs() {
+    // 1. Try local cache first (instant)
+    try {
+        var cached = await invoke('load_cached_tabs');
+        if (cached) {
+            var parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) tabs = parsed;
+        }
+    } catch(e) {}
+
+    // 2. Try API via content webview (fresh data)
+    // This is handled by the content webview's page load injection
+    // which sends tabs back via 'tabs-loaded' event
+
+    renderTabs();
+}
+
+function showIndicator(text, color) {
+    var el = document.getElementById('save-indicator');
+    el.textContent = text;
+    el.style.background = color;
+    el.style.color = '#fff';
+    el.style.opacity = '1';
+    setTimeout(function() { el.style.opacity = '0'; }, 2000);
+}
+
+// =====================================================================
+//  VERSION CHECK
+// =====================================================================
+
+async function checkVersion() {
+    try {
+        var ver = await invoke('get_app_version');
+        document.getElementById('info-current-ver').textContent = 'v' + ver;
+        document.getElementById('version-label').textContent = 'v' + ver;
+    } catch(e) {}
+
+    // Check latest version from server
+    try {
+        var resp = await fetch(APP + '/api/v1/desktop/version');
+        if (resp.ok) {
+            var data = await resp.json();
+            document.getElementById('info-latest-ver').textContent = data.version ? 'v' + data.version : 'unknown';
+        }
+    } catch(e) {}
+}
+
+// =====================================================================
+//  EVENT LISTENERS
+// =====================================================================
+
+// Listen for content webview navigation (emitted by Rust)
+if (window.__TAURI_INTERNALS__) {
+    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
+        event: 'content-navigated',
+        handler: function(event) {
+            currentUrl = event.payload || '';
+            renderTabs();
+        }
+    }).catch(function() {
+        // Fallback: poll for URL changes
+        setInterval(async function() {
+            try {
+                var url = await invoke('get_content_url');
+                if (url !== currentUrl) {
+                    currentUrl = url;
+                    renderTabs();
+                }
+            } catch(e) {}
+        }, 1000);
+    });
+
+    // Listen for badge updates
+    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
+        event: 'badge-update',
+        handler: function(event) {
+            try {
+                var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+                updateBadge('email', data.unread_emails || 0);
+                updateBadge('chat', data.unread_chats || 0);
+            } catch(e) {}
+        }
+    }).catch(function() {});
+
+    // Listen for fresh tabs from content webview
+    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
+        event: 'tabs-loaded',
+        handler: function(event) {
+            try {
+                var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+                if (data && Array.isArray(data)) {
+                    tabs = data;
+                    renderTabs();
+                    if (configOpen) renderConfigList();
+                    // Cache locally
+                    invoke('save_cached_tabs', { tabsJson: JSON.stringify(tabs) });
+                }
+            } catch(e) {}
+        }
+    }).catch(function() {});
+}
+
+function updateBadge(tabId, count) {
+    var badge = document.getElementById('badge-' + tabId);
+    if (!badge) return;
+    if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : count;
+        badge.classList.add('visible');
+    } else {
+        badge.classList.remove('visible');
+    }
+}
+
+// Button handlers
+document.getElementById('logo-btn').onclick = function() {
+    invoke('navigate_content', { url: APP + '/dashboard' });
+};
+document.getElementById('btn-back').onclick = function() {
+    invoke('content_go_back');
+};
+document.getElementById('btn-refresh').onclick = function() {
+    invoke('content_reload');
+};
+document.getElementById('btn-copy').onclick = async function() {
+    try {
+        var url = await invoke('get_content_url');
+        navigator.clipboard.writeText(url);
+        document.getElementById('copy-label').textContent = 'Copied!';
+        setTimeout(function() { document.getElementById('copy-label').textContent = 'Copy'; }, 2000);
+    } catch(e) {}
+};
+document.getElementById('btn-info').onclick = function() {
+    document.getElementById('info-popup').classList.toggle('open');
+};
+document.getElementById('btn-settings').onclick = toggleConfig;
+
+document.getElementById('btn-add-tab').onclick = function() {
+    var label = document.getElementById('new-label').value.trim();
+    var url = document.getElementById('new-url').value.trim();
+    var emoji = document.getElementById('new-emoji').value.trim();
+    if (!label || !url) return;
+    tabs.push({
+        id: 'custom_' + Date.now(),
+        label: label,
+        icon: 'custom',
+        url: url,
+        enabled: true,
+        custom: true,
+        tier: 'user',
+        emoji: emoji || label.charAt(0).toUpperCase()
+    });
+    document.getElementById('new-label').value = '';
+    document.getElementById('new-url').value = '';
+    document.getElementById('new-emoji').value = '';
+    renderConfigList();
+    renderTabs();
+    saveTabs();
+};
+
+document.getElementById('btn-reset').onclick = function() {
+    if (confirm('Reset sidebar to defaults?')) {
+        tabs = DEFAULT_TABS.map(function(t) { return Object.assign({}, t); });
+        renderConfigList();
+        renderTabs();
+        saveTabs();
+    }
+};
+
+// =====================================================================
+//  INIT
+// =====================================================================
+
+loadTabs();
+checkVersion();
+</script>
+</body>
+</html>
