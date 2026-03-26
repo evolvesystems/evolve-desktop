@@ -1,11 +1,10 @@
 // EvolveApp Desktop — Dual Webview Architecture
 //
 // Two webviews in one window:
-//   - "sidebar" (56px, left) — local sidebar.html, never navigates, persists across all page loads
-//   - "content" (rest of width) — loads evolvepreneuriq.app, handles all navigation
+//   - "sidebar" (56px, left) — local sidebar.html, persists across all page loads
+//   - "content" (rest of width) — loads evolvepreneuriq.app
 //
-// IPC commands bridge communication between the two webviews.
-// The sidebar never flashes or disappears during page navigation.
+// Uses Tauri 2.x multi-webview (unstable feature).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -13,28 +12,27 @@ use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::PageLoadEvent,
-    Emitter, Manager, WebviewBuilder, WebviewUrl,
+    Emitter, Manager, WebviewUrl,
 };
 use std::fs;
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
 const SIDEBAR_WIDTH: f64 = 56.0;
-const SIDEBAR_EXPANDED_WIDTH: f64 = 316.0;
+const SIDEBAR_EXPANDED: f64 = 316.0;
 
-// Helper: evaluate JS in a webview (handles type inference)
-fn eval_in(webview: &tauri::Webview, js: &str) {
-    let _ = webview.eval(js);
-}
-
-// Helper: navigate content webview to a URL
-fn nav_content(app: &tauri::AppHandle, url: &str) {
-    if let Some(content) = app.get_webview("content") {
-        eval_in(&content, &format!("window.location.href='{}'", url.replace('\'', "\\'")));
+// Helper: eval JS in a named webview
+fn run_js(app: &tauri::AppHandle, label: &str, js: &str) {
+    if let Some(wv) = app.get_webview(label) {
+        let _ = wv.eval(js);
     }
 }
 
+fn nav_content(app: &tauri::AppHandle, url: &str) {
+    run_js(app, "content", &format!("window.location.href='{}'", url.replace('\'', "\\'")));
+}
+
 // =====================================================================
-//  TAURI COMMANDS (IPC between sidebar and content webviews)
+//  TAURI COMMANDS
 // =====================================================================
 
 #[tauri::command]
@@ -64,56 +62,46 @@ async fn navigate_content(app: tauri::AppHandle, url: String) -> Result<(), Stri
 
 #[tauri::command]
 async fn get_content_url(app: tauri::AppHandle) -> Result<String, String> {
-    if let Some(content) = app.get_webview("content") {
-        return Ok(content.url().map_or_else(|_| String::new(), |u| u.to_string()));
-    }
-    Err("Content webview not found".into())
+    app.get_webview("content")
+        .ok_or_else(|| "Content webview not found".to_string())
+        .and_then(|wv| wv.url().map(|u| u.to_string()).map_err(|e| e.to_string()))
 }
 
 #[tauri::command]
 async fn content_go_back(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(content) = app.get_webview("content") {
-        eval_in(&content, "history.back()");
-    }
+    run_js(&app, "content", "history.back()");
     Ok(())
 }
 
 #[tauri::command]
 async fn content_reload(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(content) = app.get_webview("content") {
-        eval_in(&content, "location.reload()");
-    }
+    run_js(&app, "content", "location.reload()");
     Ok(())
 }
 
 #[tauri::command]
 async fn toggle_sidebar_config(app: tauri::AppHandle, open: bool) -> Result<(), String> {
-    let window = app.get_webview_window("main").ok_or("Window not found")?;
-    let size = window.inner_size().map_err(|e| e.to_string())?;
-    let sidebar_width = if open { SIDEBAR_EXPANDED_WIDTH } else { SIDEBAR_WIDTH };
+    let win = app.get_window("main").ok_or("Window not found")?;
+    let size = win.inner_size().map_err(|e| e.to_string())?;
+    let sw = if open { SIDEBAR_EXPANDED } else { SIDEBAR_WIDTH };
 
-    if let Some(sidebar) = app.get_webview("sidebar") {
-        let _ = sidebar.set_size(tauri::LogicalSize::new(sidebar_width, size.height as f64));
+    if let Some(sb) = app.get_webview("sidebar") {
+        let _ = sb.set_size(tauri::LogicalSize::new(sw, size.height as f64));
     }
-    if let Some(content) = app.get_webview("content") {
-        let _ = content.set_position(tauri::LogicalPosition::new(sidebar_width as i32, 0));
-        let _ = content.set_size(tauri::LogicalSize::new(
-            (size.width as f64 - sidebar_width).max(100.0),
-            size.height as f64,
-        ));
+    if let Some(ct) = app.get_webview("content") {
+        let _ = ct.set_position(tauri::LogicalPosition::new(sw, 0.0));
+        let _ = ct.set_size(tauri::LogicalSize::new((size.width as f64 - sw).max(100.0), size.height as f64));
     }
     Ok(())
 }
 
 #[tauri::command]
 async fn save_tabs_via_content(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
-    if let Some(content) = app.get_webview("content") {
-        let js = format!(
-            "fetch('/api/v1/desktop/sidebar/user-overrides',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'include',body:JSON.stringify({{overrides:{}.map(function(t,i){{return{{tab_id:t.id,hidden:!t.enabled,sort_order:i}}}})}})}}).catch(function(){{}});",
-            tabs_json
-        );
-        eval_in(&content, &js);
-    }
+    let js = format!(
+        "fetch('/api/v1/desktop/sidebar/user-overrides',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'include',body:JSON.stringify({{overrides:{}.map(function(t,i){{return{{tab_id:t.id,hidden:!t.enabled,sort_order:i}}}})}})}}).catch(function(){{}});",
+        tabs_json
+    );
+    run_js(&app, "content", &js);
     Ok(())
 }
 
@@ -144,24 +132,33 @@ fn main() {
             save_tabs_via_content,
         ])
         .setup(|app| {
-            let window = app.get_webview_window("main").expect("main window not found");
-            let size = window.inner_size()?;
-            let win_width = size.width as f64;
-            let win_height = size.height as f64;
+            // Create a bare Window (not WebviewWindow) so we can add multiple webviews
+            let window = tauri::window::WindowBuilder::new(app, "main")
+                .title("EvolveApp")
+                .inner_size(1400.0, 900.0)
+                .min_inner_size(1024.0, 600.0)
+                .center()
+                .visible(false)
+                .build()?;
 
-            // Create sidebar webview (loads local sidebar.html from frontendDist)
-            let sidebar_builder = WebviewBuilder::new(
+            let size = window.inner_size()?;
+            let w = size.width as f64;
+            let h = size.height as f64;
+
+            // Sidebar webview — local HTML, never navigates
+            let sidebar_builder = tauri::webview::WebviewBuilder::new(
                 "sidebar",
                 WebviewUrl::App("sidebar.html".into()),
-            );
+            ).auto_resize();
+
             let _sidebar = window.add_child(
                 sidebar_builder,
-                tauri::LogicalPosition::new(0, 0),
-                tauri::LogicalSize::new(SIDEBAR_WIDTH, win_height),
+                tauri::LogicalPosition::new(0.0, 0.0),
+                tauri::LogicalSize::new(SIDEBAR_WIDTH, h),
             )?;
 
-            // Create content webview (loads the web app)
-            let content_builder = WebviewBuilder::new(
+            // Content webview — loads the web app
+            let content_builder = tauri::webview::WebviewBuilder::new(
                 "content",
                 WebviewUrl::External(APP_URL.parse().unwrap()),
             )
@@ -169,28 +166,29 @@ fn main() {
 
             let content = window.add_child(
                 content_builder,
-                tauri::LogicalPosition::new(SIDEBAR_WIDTH as i32, 0),
-                tauri::LogicalSize::new(win_width - SIDEBAR_WIDTH, win_height),
+                tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0),
+                tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
             )?;
 
-            // On content page load: emit URL to sidebar + fetch badges/tabs
+            // On content page load: emit URL + fetch badges/tabs
             let app_handle = app.handle().clone();
-            content.on_page_load(move |webview, payload| {
+            content.on_page_load(move |webview: &tauri::Webview, payload: &tauri::webview::PageLoadPayload<'_>| {
                 if payload.event() != PageLoadEvent::Finished {
                     return;
                 }
 
                 // Show window on first load
-                if let Some(win) = app_handle.get_webview_window("main") {
+                if let Some(win) = app_handle.get_window("main") {
                     let _ = win.show();
                 }
 
-                // Emit current URL to sidebar for active tab highlighting
-                let url = webview.url().map_or_else(|_| String::new(), |u| u.to_string());
-                let _ = app_handle.emit_to("sidebar", "content-navigated", &url);
+                // Emit URL to sidebar for active tab highlighting
+                if let Ok(url) = webview.url() {
+                    let _ = app_handle.emit_to("sidebar", "content-navigated", url.to_string());
+                }
 
-                // Inject tiny script to fetch tabs and badges (content has auth cookies)
-                eval_in(webview, r#"
+                // Tiny injection: fetch tabs + badges (content has auth cookies)
+                let _ = webview.eval(r#"
                     (async function() {
                         try {
                             var r = await fetch('/api/v1/desktop/sidebar/tabs', {credentials:'include'});
@@ -210,19 +208,18 @@ fn main() {
                 "#);
             });
 
-            // Handle window resize — reposition both webviews
+            // Window resize handler
             let app_handle2 = app.handle().clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::Resized(size) = event {
                     let h = size.height as f64;
                     let w = size.width as f64;
-                    let sw = SIDEBAR_WIDTH;
-                    if let Some(sidebar) = app_handle2.get_webview("sidebar") {
-                        let _ = sidebar.set_size(tauri::LogicalSize::new(sw, h));
+                    if let Some(sb) = app_handle2.get_webview("sidebar") {
+                        let _ = sb.set_size(tauri::LogicalSize::new(SIDEBAR_WIDTH, h));
                     }
-                    if let Some(content) = app_handle2.get_webview("content") {
-                        let _ = content.set_position(tauri::LogicalPosition::new(sw as i32, 0));
-                        let _ = content.set_size(tauri::LogicalSize::new((w - sw).max(100.0), h));
+                    if let Some(ct) = app_handle2.get_webview("content") {
+                        let _ = ct.set_position(tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0));
+                        let _ = ct.set_size(tauri::LogicalSize::new((w - SIDEBAR_WIDTH).max(100.0), h));
                     }
                 }
             });
@@ -234,18 +231,12 @@ fn main() {
                 let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
                     for url in event.urls() {
-                        let url_str = url.as_str();
-                        if let Some(path) = url_str.strip_prefix("evolveapp://") {
-                            let path = if path.starts_with('/') {
-                                path.to_string()
-                            } else {
-                                format!("/{}", path)
-                            };
-                            let full_url = format!("{}{}", APP_URL, path);
-                            nav_content(&handle, &full_url);
-                            if let Some(window) = handle.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+                        if let Some(path) = url.as_str().strip_prefix("evolveapp://") {
+                            let path = if path.starts_with('/') { path.to_string() } else { format!("/{}", path) };
+                            nav_content(&handle, &format!("{}{}", APP_URL, path));
+                            if let Some(win) = handle.get_window("main") {
+                                let _ = win.show();
+                                let _ = win.set_focus();
                             }
                         }
                     }
@@ -253,22 +244,19 @@ fn main() {
             }
 
             // --- System tray ---
-            let email = MenuItem::with_id(app, "email", "Email", true, None::<&str>)?;
-            let chat = MenuItem::with_id(app, "chat", "Team Chat", true, None::<&str>)?;
-            let docs = MenuItem::with_id(app, "docs", "Evolve Docs", true, None::<&str>)?;
-            let va = MenuItem::with_id(app, "va", "VA Assistant", true, None::<&str>)?;
-            let sep1 = MenuItem::with_id(app, "sep1", "---", false, None::<&str>)?;
-            let dashboard = MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?;
-            let crm = MenuItem::with_id(app, "crm", "CRM Contacts", true, None::<&str>)?;
-            let calendar = MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?;
-            let books = MenuItem::with_id(app, "books", "Books", true, None::<&str>)?;
-            let sep2 = MenuItem::with_id(app, "sep2", "---", false, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?;
-
-            let menu = Menu::with_items(
-                app,
-                &[&email, &chat, &docs, &va, &sep1, &dashboard, &crm, &calendar, &books, &sep2, &quit],
-            )?;
+            let menu = Menu::with_items(app, &[
+                &MenuItem::with_id(app, "email", "Email", true, None::<&str>)?,
+                &MenuItem::with_id(app, "chat", "Team Chat", true, None::<&str>)?,
+                &MenuItem::with_id(app, "docs", "Evolve Docs", true, None::<&str>)?,
+                &MenuItem::with_id(app, "va", "VA Assistant", true, None::<&str>)?,
+                &MenuItem::with_id(app, "sep1", "---", false, None::<&str>)?,
+                &MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?,
+                &MenuItem::with_id(app, "crm", "CRM Contacts", true, None::<&str>)?,
+                &MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?,
+                &MenuItem::with_id(app, "books", "Books", true, None::<&str>)?,
+                &MenuItem::with_id(app, "sep2", "---", false, None::<&str>)?,
+                &MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?,
+            ])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -276,34 +264,19 @@ fn main() {
                 .tooltip("EvolveApp")
                 .on_menu_event(|app, event| {
                     let path = match event.id.as_ref() {
-                        "email" => "/email",
-                        "chat" => "/chat",
-                        "docs" => "/evolve-docs",
-                        "va" => "/workspace/va",
-                        "dashboard" => "/dashboard",
-                        "crm" => "/crm-marketing/contacts",
-                        "calendar" => "/scheduling",
+                        "email" => "/email", "chat" => "/chat", "docs" => "/evolve-docs",
+                        "va" => "/workspace/va", "dashboard" => "/dashboard",
+                        "crm" => "/crm-marketing/contacts", "calendar" => "/scheduling",
                         "books" => "/books",
                         "quit" => { app.exit(0); return; }
                         _ => return,
                     };
                     nav_content(app, &format!("{}{}", APP_URL, path));
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                    if let Some(win) = app.get_window("main") { let _ = win.show(); let _ = win.set_focus(); }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                    if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        if let Some(win) = tray.app_handle().get_window("main") { let _ = win.show(); let _ = win.set_focus(); }
                     }
                 })
                 .build(app)?;
