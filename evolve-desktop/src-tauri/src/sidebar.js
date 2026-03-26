@@ -713,17 +713,24 @@
         var hasCachedTabs = window.__EVOLVEAPP_CACHED_TABS__ && Array.isArray(window.__EVOLVEAPP_CACHED_TABS__);
 
         if (onEiq) {
-            // On EIQ domain: load fresh tabs from API
+            // On EIQ domain: load merged tabs from new unified endpoint
             try {
-                var tr = await fetch(apiBase + '/api/v1/desktop/settings/tenant-defaults/sidebar_tabs', {credentials:'include'});
-                if (tr.ok && !isHtmlLoginRedirect(tr)) {
-                    var td = await tr.json();
-                    if (td.value && Array.isArray(td.value)) { tabs = td.value; tabsLoadedFromServer = true; }
-                }
-                var ur = await fetch(apiBase + '/api/v1/desktop/settings/sidebar_tabs', {credentials:'include'});
-                if (ur.ok && !isHtmlLoginRedirect(ur)) {
-                    var ud = await ur.json();
-                    if (ud.value && Array.isArray(ud.value)) { tabs = ud.value; tabsLoadedFromServer = true; }
+                var resp = await fetch(apiBase + '/api/v1/desktop/sidebar/tabs', {credentials:'include'});
+                if (resp.ok && !isHtmlLoginRedirect(resp)) {
+                    var data = await resp.json();
+                    if (data.tabs && Array.isArray(data.tabs)) { tabs = data.tabs; tabsLoadedFromServer = true; }
+                } else if (resp.status === 404) {
+                    // Fallback to old endpoints for servers that haven't upgraded
+                    var tr = await fetch(apiBase + '/api/v1/desktop/settings/tenant-defaults/sidebar_tabs', {credentials:'include'});
+                    if (tr.ok && !isHtmlLoginRedirect(tr)) {
+                        var td = await tr.json();
+                        if (td.value && Array.isArray(td.value)) { tabs = td.value; tabsLoadedFromServer = true; }
+                    }
+                    var ur = await fetch(apiBase + '/api/v1/desktop/settings/sidebar_tabs', {credentials:'include'});
+                    if (ur.ok && !isHtmlLoginRedirect(ur)) {
+                        var ud = await ur.json();
+                        if (ud.value && Array.isArray(ud.value)) { tabs = ud.value; tabsLoadedFromServer = true; }
+                    }
                 }
             } catch(e) {}
 
