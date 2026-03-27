@@ -65,8 +65,8 @@ body::-webkit-scrollbar { width:0; }
 #add-form .add-btn { width:100%; padding:7px; border-radius:6px; border:none; background:#3b82f6; color:#fff; font-size:11px; cursor:pointer; font-family:system-ui; }
 #add-form .reset-btn { margin-top:8px; width:100%; padding:7px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); background:none; color:rgba(255,255,255,0.4); font-size:11px; cursor:pointer; font-family:system-ui; }
 
-/* Info popup */
-#info-popup { position:fixed; bottom:60px; left:4px; width:220px; background:oklch(0.22 0.006 285.88); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:14px; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none; }
+/* Info popup — positioned inside expanded sidebar area */
+#info-popup { position:fixed; bottom:60px; left:56px; width:220px; background:oklch(0.22 0.006 285.88); border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:14px; z-index:20; box-shadow:0 8px 24px rgba(0,0,0,0.4); display:none; }
 #info-popup.open { display:block; }
 #info-popup .title { font-size:13px; font-weight:600; margin-bottom:8px; }
 #info-popup .ver { font-size:11px; color:rgba(255,255,255,0.5); margin-bottom:4px; }
@@ -306,17 +306,20 @@ function renderConfigList() {
 }
 
 function toggleConfig() {
+    // Close info popup if open
+    if (infoOpen) {
+        infoOpen = false;
+        document.getElementById('info-popup').classList.remove('open');
+    }
+
     configOpen = !configOpen;
     document.getElementById('config-panel').classList.toggle('open', configOpen);
     document.getElementById('btn-settings').classList.toggle('open', configOpen);
 
     if (configOpen) {
         renderConfigList();
-        // Ask Rust to expand sidebar width
-        invoke('toggle_sidebar_config', { open: true });
-    } else {
-        invoke('toggle_sidebar_config', { open: false });
     }
+    invoke('toggle_sidebar_config', { open: configOpen });
 }
 
 // =====================================================================
@@ -474,8 +477,14 @@ document.getElementById('btn-copy').onclick = async function() {
         setTimeout(function() { document.getElementById('copy-label').textContent = 'Copy'; }, 2000);
     } catch(e) {}
 };
+var infoOpen = false;
 document.getElementById('btn-info').onclick = function() {
-    document.getElementById('info-popup').classList.toggle('open');
+    infoOpen = !infoOpen;
+    document.getElementById('info-popup').classList.toggle('open', infoOpen);
+    // Expand/collapse sidebar to show popup
+    if (!configOpen) {
+        invoke('toggle_sidebar_config', { open: infoOpen });
+    }
 };
 document.getElementById('btn-settings').onclick = toggleConfig;
 document.getElementById('btn-close-config').onclick = function() {
