@@ -68,11 +68,16 @@ body::-webkit-scrollbar { width:0; }
 /* Save indicator */
 #save-indicator { position:fixed; top:8px; left:60px; z-index:30; padding:4px 12px; border-radius:6px; font-size:11px; opacity:0; transition:opacity 0.3s; pointer-events:none; }
 
-/* Loading indicator */
-#loading-bar { position:fixed; top:0; left:0; right:0; height:2px; background:#3b82f6; z-index:50; transform:scaleX(0); transform-origin:left; transition:transform 0.3s ease; }
-#loading-bar.loading { transform:scaleX(0.7); transition:transform 8s cubic-bezier(0.1, 0.05, 0, 1); }
-#loading-bar.done { transform:scaleX(1); transition:transform 0.2s ease; }
+/* Loading indicator — top bar + glow */
+#loading-bar { position:fixed; top:0; left:0; right:0; height:3px; z-index:50; transform:scaleX(0); transform-origin:left; transition:transform 0.3s ease; background:linear-gradient(90deg, #3b82f6, #818cf8, #3b82f6); background-size:200% 100%; box-shadow:0 0 12px rgba(59,130,246,0.6), 0 0 4px rgba(59,130,246,0.3); }
+#loading-bar.loading { transform:scaleX(1); transition:transform 6s cubic-bezier(0.1, 0.05, 0, 1); animation:loading-shimmer 1.5s linear infinite; }
+#loading-bar.done { transform:scaleX(1); transition:transform 0.15s ease; }
 #loading-bar.hidden { opacity:0; transition:opacity 0.3s ease 0.2s; }
+@keyframes loading-shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+
+/* Pulsing logo during load */
+.logo.loading { animation:logo-pulse 1.2s ease-in-out infinite; box-shadow:0 0 12px rgba(59,130,246,0.5); }
+@keyframes logo-pulse { 0%,100% { box-shadow:0 0 4px rgba(59,130,246,0.2); } 50% { box-shadow:0 0 16px rgba(59,130,246,0.6); } }
 </style>
 </head>
 <body>
@@ -158,14 +163,16 @@ var configOpen = false;
 function showLoading() {
     var bar = document.getElementById('loading-bar');
     bar.className = '';
-    void bar.offsetWidth; // force reflow
+    void bar.offsetWidth;
     bar.className = 'loading';
+    document.getElementById('logo-btn').classList.add('loading');
 }
 function hideLoading() {
     var bar = document.getElementById('loading-bar');
     bar.className = 'done';
     setTimeout(function() { bar.className = 'done hidden'; }, 200);
     setTimeout(function() { bar.className = ''; }, 600);
+    document.getElementById('logo-btn').classList.remove('loading');
 }
 
 function makeSvg(name) {
