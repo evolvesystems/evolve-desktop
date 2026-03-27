@@ -68,12 +68,11 @@ body::-webkit-scrollbar { width:0; }
 /* Save indicator */
 #save-indicator { position:fixed; top:8px; left:60px; z-index:30; padding:4px 12px; border-radius:6px; font-size:11px; opacity:0; transition:opacity 0.3s; pointer-events:none; }
 
-/* Loading indicator — top bar + glow */
-#loading-bar { position:fixed; top:0; left:0; right:0; height:3px; z-index:50; transform:scaleX(0); transform-origin:left; transition:transform 0.3s ease; background:linear-gradient(90deg, #3b82f6, #818cf8, #3b82f6); background-size:200% 100%; box-shadow:0 0 12px rgba(59,130,246,0.6), 0 0 4px rgba(59,130,246,0.3); }
-#loading-bar.loading { transform:scaleX(1); transition:transform 6s cubic-bezier(0.1, 0.05, 0, 1); animation:loading-shimmer 1.5s linear infinite; }
-#loading-bar.done { transform:scaleX(1); transition:transform 0.15s ease; }
-#loading-bar.hidden { opacity:0; transition:opacity 0.3s ease 0.2s; }
-@keyframes loading-shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+/* Loading indicator — indeterminate sliding bar */
+#loading-bar { position:fixed; top:0; left:0; right:0; height:3px; z-index:50; overflow:hidden; opacity:0; transition:opacity 0.2s ease; }
+#loading-bar.active { opacity:1; }
+#loading-bar .track { position:absolute; top:0; left:0; width:40%; height:100%; background:linear-gradient(90deg, transparent, #3b82f6, #818cf8, #3b82f6, transparent); border-radius:2px; box-shadow:0 0 10px rgba(59,130,246,0.5); animation:slide 1.2s ease-in-out infinite; }
+@keyframes slide { 0% { left:-40%; } 100% { left:100%; } }
 
 /* Pulsing logo during load */
 .logo.loading { animation:logo-pulse 1.2s ease-in-out infinite; box-shadow:0 0 12px rgba(59,130,246,0.5); }
@@ -116,7 +115,7 @@ body::-webkit-scrollbar { width:0; }
   </div>
 </div>
 
-<div id="loading-bar"></div>
+<div id="loading-bar"><div class="track"></div></div>
 <div id="save-indicator"></div>
 
 <script>
@@ -161,17 +160,11 @@ var configOpen = false;
 
 // Loading indicator
 function showLoading() {
-    var bar = document.getElementById('loading-bar');
-    bar.className = '';
-    void bar.offsetWidth;
-    bar.className = 'loading';
+    document.getElementById('loading-bar').classList.add('active');
     document.getElementById('logo-btn').classList.add('loading');
 }
 function hideLoading() {
-    var bar = document.getElementById('loading-bar');
-    bar.className = 'done';
-    setTimeout(function() { bar.className = 'done hidden'; }, 200);
-    setTimeout(function() { bar.className = ''; }, 600);
+    document.getElementById('loading-bar').classList.remove('active');
     document.getElementById('logo-btn').classList.remove('loading');
 }
 
@@ -389,6 +382,14 @@ if (window.__TAURI_INTERNALS__) {
         event: 'content-loading',
         handler: function() {
             showLoading();
+        }
+    }).catch(function() {});
+
+    // Listen for loading finished (backup signal)
+    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
+        event: 'content-loaded',
+        handler: function() {
+            hideLoading();
         }
     }).catch(function() {});
 

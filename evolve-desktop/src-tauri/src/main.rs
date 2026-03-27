@@ -357,7 +357,9 @@ fn main() {
                         let _ = app_handle.emit_to("sidebar", "content-loading", true);
                         return;
                     }
-                    PageLoadEvent::Finished => {}
+                    PageLoadEvent::Finished => {
+                        let _ = app_handle.emit_to("sidebar", "content-loaded", true);
+                    }
                     _ => return,
                 }
 
