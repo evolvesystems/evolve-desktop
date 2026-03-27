@@ -289,6 +289,40 @@ async fn save_tabs_via_content(app: tauri::AppHandle, tabs_json: String) -> Resu
 
 fn main() {
     tauri::Builder::default()
+        .register_uri_scheme_protocol("evolve", |_ctx, request| {
+            let path = request.uri().path().trim_start_matches('/');
+            // In dev: read from src-tauri/assets/; in prod: same dir is bundled as resources
+            let assets_dir = if cfg!(debug_assertions) {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets")
+            } else {
+                // In production, assets are in the resource dir
+                let exe = std::env::current_exe().unwrap_or_default();
+                #[cfg(target_os = "macos")]
+                let base = exe.parent().unwrap_or(&exe).parent().unwrap_or(&exe).join("Resources").join("assets");
+                #[cfg(not(target_os = "macos"))]
+                let base = exe.parent().unwrap_or(&exe).join("assets");
+                base
+            };
+            let file_path = assets_dir.join(path);
+            match fs::read(&file_path) {
+                Ok(data) => {
+                    let mime = if path.ends_with(".html") { "text/html" }
+                        else if path.ends_with(".js") { "application/javascript" }
+                        else if path.ends_with(".css") { "text/css" }
+                        else { "application/octet-stream" };
+                    tauri::http::Response::builder()
+                        .header("Content-Type", mime)
+                        .body(data)
+                        .unwrap()
+                }
+                Err(_) => {
+                    tauri::http::Response::builder()
+                        .status(404)
+                        .body(b"Not Found".to_vec())
+                        .unwrap()
+                }
+            }
+        })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_http::init())
@@ -330,23 +364,12 @@ fn main() {
             let w = phys.width as f64 / scale;
             let h = phys.height as f64 / scale;
 
-            // Sidebar webview — local HTML, never navigates.
-            // In dev mode, WebviewUrl::App resolves to devUrl which is remote,
-            // so we use a file:// URL pointing to the local assets directory.
-            // In production, WebviewUrl::App works fine (bundled assets).
-            let sidebar_url = if cfg!(debug_assertions) {
-                let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-                let sidebar_path = manifest_dir.join("assets").join("sidebar.html");
-                WebviewUrl::External(
-                    format!("file://{}", sidebar_path.display()).parse()
-                        .map_err(|e| tauri::Error::AssetNotFound(format!("{}", e)))?
-                )
-            } else {
-                WebviewUrl::App("sidebar.html".into())
-            };
+            // Sidebar webview — served via custom 'evolve' protocol so IPC works
+            // in both dev and production mode. (WebviewUrl::App resolves to devUrl
+            // in dev mode which is a remote server, and file:// has no IPC.)
             let sidebar_builder = tauri::webview::WebviewBuilder::new(
                 "sidebar",
-                sidebar_url,
+                WebviewUrl::CustomProtocol("evolve://localhost/sidebar.html".parse().unwrap()),
             );
 
             let _sidebar = window.add_child(
