@@ -147,7 +147,20 @@ jobs:
             exit 1
           fi
 
+          # Also find the Developer ID Installer identity for PKG signing
+          INSTALLER_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" \
+            | grep "Developer ID Installer" | head -1 \
+            | sed 's/.*"\(.*\)".*/\1/')
+
+          if [ -z "$INSTALLER_IDENTITY" ]; then
+            echo "WARNING: No Developer ID Installer identity found — PKG signing will be skipped"
+            security find-identity -v "$KEYCHAIN_PATH"
+          else
+            echo "Installer identity: $INSTALLER_IDENTITY"
+          fi
+
           echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "INSTALLER_IDENTITY=$INSTALLER_IDENTITY" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "Signing identity: $IDENTITY"
           rm -f certificate.p12
@@ -183,28 +196,67 @@ jobs:
             echo "DMG rebuilt: $DMG_DIR/$DMG_NAME"
           fi
 
-      - name: Notarize macOS DMG
+      - name: Build signed PKG installer
+        if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest' && env.INSTALLER_IDENTITY != ''
+        run: |
+          APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "ERROR: No .app bundle found"
+            exit 1
+          fi
+
+          APP_NAME=$(basename "$APP_BUNDLE" .app)
+          VERSION=${{ github.event.inputs.version || github.ref_name }}
+          VERSION=${VERSION#v}
+          PKG_DIR="evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg"
+          mkdir -p "$PKG_DIR"
+          PKG_FILE="$PKG_DIR/${APP_NAME}_${VERSION}_${{ matrix.platform.rust_target }}.pkg"
+
+          echo "Building PKG: $PKG_FILE"
+          pkgbuild \
+            --component "$APP_BUNDLE" \
+            --install-location /Applications \
+            --sign "$INSTALLER_IDENTITY" \
+            --timestamp \
+            "$PKG_FILE"
+
+          echo "Verifying PKG signature..."
+          pkgutil --check-signature "$PKG_FILE"
+          echo "PKG built: $PKG_FILE"
+
+      - name: Notarize macOS DMG and PKG
         if: steps.should_build.outputs.build == 'true' && matrix.platform.os == 'macos-latest'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Notarize DMG
           DMG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
-          if [ -z "$DMG_FILE" ]; then
-            echo "ERROR: No DMG found to notarize"
-            exit 1
+          if [ -n "$DMG_FILE" ]; then
+            echo "Submitting DMG for notarization: $DMG_FILE"
+            xcrun notarytool submit "$DMG_FILE" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait --timeout 600
+            xcrun stapler staple "$DMG_FILE"
+            echo "DMG notarized"
           fi
 
-          echo "Submitting for notarization: $DMG_FILE"
-          xcrun notarytool submit "$DMG_FILE" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait --timeout 600
+          # Notarize PKG
+          PKG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg -name "*.pkg" 2>/dev/null | head -1)
+          if [ -n "$PKG_FILE" ]; then
+            echo "Submitting PKG for notarization: $PKG_FILE"
+            xcrun notarytool submit "$PKG_FILE" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait --timeout 600
+            xcrun stapler staple "$PKG_FILE"
+            echo "PKG notarized"
+          fi
 
-          echo "Stapling notarization ticket..."
-          xcrun stapler staple "$DMG_FILE"
           echo "Done — signed and notarized"
 
       - name: Clean up signing keychain
@@ -240,6 +292,7 @@ jobs:
           name: macos-${{ matrix.platform.rust_target }}
           path: |
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg/*.dmg
+            evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg/*.pkg
 
   release:
     needs: build
@@ -272,5 +325,6 @@ jobs:
             artifacts/**/*.msi
             artifacts/**/*.exe
             artifacts/**/*.dmg
+            artifacts/**/*.pkg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
