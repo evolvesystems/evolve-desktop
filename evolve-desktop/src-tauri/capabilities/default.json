@@ -3,7 +3,7 @@
   "identifier": "default",
   "description": "Default capabilities for EvolveApp dual-webview architecture",
   "windows": ["main"],
-  "webviews": ["sidebar", "content", "main"],
+  "webviews": ["sidebar", "content", "loading", "main"],
   "permissions": [
     "core:default",
     "core:window:allow-center",

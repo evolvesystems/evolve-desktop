@@ -32,6 +32,28 @@ fn nav_content(app: &tauri::AppHandle, url: &str) {
     run_js(app, "content", &format!("window.location.href='{}'", url.replace('\'', "\\'")));
 }
 
+/// Show or hide the loading overlay webview
+fn show_loading_overlay(app: &tauri::AppHandle, show: bool) {
+    if let Some(loading) = app.get_webview("loading") {
+        if show {
+            // Move loading overlay on top of content area
+            if let Some(win) = app.get_window("main") {
+                let scale = win.scale_factor().unwrap_or(1.0);
+                if let Ok(phys) = win.inner_size() {
+                    let w = phys.width as f64 / scale;
+                    let h = phys.height as f64 / scale;
+                    let _ = loading.set_position(tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0));
+                    let _ = loading.set_size(tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h));
+                }
+            }
+        } else {
+            // Move off-screen to hide
+            let _ = loading.set_position(tauri::LogicalPosition::new(-9999.0, -9999.0));
+            let _ = loading.set_size(tauri::LogicalSize::new(0.0, 0.0));
+        }
+    }
+}
+
 // =====================================================================
 //  TAURI COMMANDS
 // =====================================================================
@@ -350,48 +372,18 @@ fn main() {
             )
             .user_agent(&format!("EvolveApp/{} Tauri/2", env!("CARGO_PKG_VERSION")))
             .background_color(tauri::window::Color(15, 15, 25, 255))
-            .initialization_script(r#"
-// EvolveApp loading spinner — runs at document-start on every page load
-(function(){
-  var style = document.createElement('style');
-  style.id = 'evolve-loading-style';
-  style.textContent = '@keyframes evolve-spin{to{transform:rotate(360deg)}}.evolve-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,0.1);border-top-color:#3b82f6;border-radius:50%;animation:evolve-spin 0.7s linear infinite;margin:0 auto;}#evolve-loading{position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:rgb(15,15,25);font-family:system-ui,-apple-system,sans-serif;transition:opacity 0.3s ease;}#evolve-loading.fade{opacity:0;}';
-  (document.head || document.documentElement).appendChild(style);
-
-  // Create spinner as soon as possible (before body exists)
-  function showSpinner() {
-    if (document.getElementById('evolve-loading')) return;
-    var o = document.createElement('div');
-    o.id = 'evolve-loading';
-    o.innerHTML = '<div style="text-align:center"><div class="evolve-spinner"></div><div style="color:rgba(255,255,255,0.5);font-size:13px;margin-top:16px;">Loading\u2026</div></div>';
-    (document.body || document.documentElement).appendChild(o);
-  }
-
-  function hideSpinner() {
-    var el = document.getElementById('evolve-loading');
-    if (!el) return;
-    el.classList.add('fade');
-    setTimeout(function() { el.remove(); }, 300);
-  }
-
-  showSpinner();
-
-  // Remove spinner when page is visually ready
-  if (document.readyState === 'complete') {
-    hideSpinner();
-  } else {
-    window.addEventListener('load', hideSpinner);
-  }
-})();
-            "#)
             .on_page_load(move |webview, payload| {
                 match payload.event() {
                     PageLoadEvent::Started => {
-                        // Tell sidebar navigation started (show loading bar)
                         let _ = app_handle.emit_to("sidebar", "content-loading", true);
+                        // Show loading overlay on top of content
+                        show_loading_overlay(&app_handle, true);
                         return;
                     }
-                    PageLoadEvent::Finished => {}
+                    PageLoadEvent::Finished => {
+                        // Hide loading overlay
+                        show_loading_overlay(&app_handle, false);
+                    }
                     _ => return,
                 }
 
@@ -429,6 +421,19 @@ fn main() {
 
             let _content = window.add_child(
                 content_builder,
+                tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0),
+                tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
+            )?;
+
+            // Loading overlay webview — created AFTER content so it renders on top.
+            // Visible initially (covers content while first page loads), hidden on Finished.
+            let loading_builder = tauri::webview::WebviewBuilder::new(
+                "loading",
+                WebviewUrl::App("loading.html".into()),
+            );
+
+            let _loading = window.add_child(
+                loading_builder,
                 tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0),
                 tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
             )?;
