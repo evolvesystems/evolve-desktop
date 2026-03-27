@@ -364,18 +364,19 @@ if (window.__TAURI_INTERNALS__) {
             hideLoading();
             renderTabs();
         }
-    }).catch(function() {
-        // Fallback: poll for URL changes
-        setInterval(async function() {
-            try {
-                var url = await invoke('get_content_url');
-                if (url !== currentUrl) {
-                    currentUrl = url;
-                    renderTabs();
-                }
-            } catch(e) {}
-        }, 1000);
-    });
+    }).catch(function() {});
+
+    // Fallback: poll for URL changes (always runs as safety net)
+    setInterval(async function() {
+        try {
+            var url = await invoke('get_content_url');
+            if (url !== currentUrl) {
+                currentUrl = url;
+                hideLoading();
+                renderTabs();
+            }
+        } catch(e) {}
+    }, 1000);
 
     // Listen for loading started
     window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
@@ -385,7 +386,7 @@ if (window.__TAURI_INTERNALS__) {
         }
     }).catch(function() {});
 
-    // Listen for loading finished (backup signal)
+    // Listen for loading finished
     window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
         event: 'content-loaded',
         handler: function() {
