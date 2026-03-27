@@ -354,9 +354,27 @@ fn main() {
                     PageLoadEvent::Started => {
                         // Tell sidebar navigation started (show loading bar)
                         let _ = app_handle.emit_to("sidebar", "content-loading", true);
+                        // Show spinner overlay in content webview
+                        let _ = webview.eval(r#"
+(function(){
+  if(document.getElementById('evolve-loading')) return;
+  var o=document.createElement('div');
+  o.id='evolve-loading';
+  o.style.cssText='position:fixed;inset:0;z-index:99998;display:flex;align-items:center;justify-content:center;background:rgba(15,15,25,0.85);font-family:system-ui,-apple-system,sans-serif;';
+  o.innerHTML='<div style="text-align:center"><div class="evolve-spinner"></div><div style="color:rgba(255,255,255,0.5);font-size:13px;margin-top:16px;">Loading...</div></div>';
+  var s=document.createElement('style');
+  s.id='evolve-loading-style';
+  s.textContent='@keyframes evolve-spin{to{transform:rotate(360deg)}}.evolve-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,0.1);border-top-color:#3b82f6;border-radius:50%;animation:evolve-spin 0.7s linear infinite;margin:0 auto;}';
+  document.head.appendChild(s);
+  document.body.appendChild(o);
+})();
+                        "#);
                         return;
                     }
-                    PageLoadEvent::Finished => {}
+                    PageLoadEvent::Finished => {
+                        // Remove spinner overlay
+                        let _ = webview.eval("var e=document.getElementById('evolve-loading');if(e)e.remove();var s=document.getElementById('evolve-loading-style');if(s)s.remove();");
+                    }
                     _ => return,
                 }
 
