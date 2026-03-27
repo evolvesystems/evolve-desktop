@@ -98,6 +98,20 @@ async fn toggle_sidebar_config(app: tauri::AppHandle, open: bool) -> Result<(), 
     Ok(())
 }
 
+/// Called from content webview JS to relay tabs data to sidebar
+#[tauri::command]
+async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
+    let _ = app.emit_to("sidebar", "tabs-loaded", &tabs_json);
+    Ok(())
+}
+
+/// Called from content webview JS to relay badge data to sidebar
+#[tauri::command]
+async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> Result<(), String> {
+    let _ = app.emit_to("sidebar", "badge-update", &badges_json);
+    Ok(())
+}
+
 #[tauri::command]
 async fn save_tabs_via_content(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
     let js = format!(
@@ -133,6 +147,8 @@ fn main() {
             content_reload,
             toggle_sidebar_config,
             save_tabs_via_content,
+            relay_tabs_to_sidebar,
+            relay_badges_to_sidebar,
         ])
         .setup(|app| {
             // Create a bare Window (not WebviewWindow) so we can add multiple webviews
@@ -191,21 +207,22 @@ fn main() {
                     let _ = app_handle.emit_to("sidebar", "content-navigated", url.to_string());
                 }
 
-                // Tiny injection: fetch tabs + badges (content has auth cookies)
+                // Tiny injection: fetch tabs + badges via Tauri commands (not plugin:event|emit)
                 let _ = webview.eval(r#"
                     (async function() {
+                        if (!window.__TAURI_INTERNALS__) return;
                         try {
                             var r = await fetch('/api/v1/desktop/sidebar/tabs', {credentials:'include'});
                             if (r.ok) {
                                 var d = await r.json();
-                                if (d.tabs) window.__TAURI_INTERNALS__.invoke('plugin:event|emit', {event:'tabs-loaded', payload:JSON.stringify(d.tabs)});
+                                if (d.tabs) window.__TAURI_INTERNALS__.invoke('relay_tabs_to_sidebar', {tabsJson: JSON.stringify(d.tabs)});
                             }
                         } catch(e) {}
                         try {
                             var r2 = await fetch('/api/v1/desktop/check-notifications', {credentials:'include'});
                             if (r2.ok) {
                                 var d2 = await r2.json();
-                                window.__TAURI_INTERNALS__.invoke('plugin:event|emit', {event:'badge-update', payload:JSON.stringify(d2)});
+                                window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
                             }
                         } catch(e) {}
                     })();

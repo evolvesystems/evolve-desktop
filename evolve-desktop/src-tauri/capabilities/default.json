@@ -21,6 +21,7 @@
     "core:webview:allow-webview-close",
     "core:event:default",
     "core:event:allow-emit",
+    "core:event:allow-emit-to",
     "core:event:allow-listen",
     "core:app:allow-app-show",
     "core:app:allow-app-hide",
