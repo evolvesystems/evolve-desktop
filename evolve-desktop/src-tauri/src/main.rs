@@ -330,10 +330,23 @@ fn main() {
             let w = phys.width as f64 / scale;
             let h = phys.height as f64 / scale;
 
-            // Sidebar webview — local HTML, never navigates
+            // Sidebar webview — local HTML, never navigates.
+            // In dev mode, WebviewUrl::App resolves to devUrl which is remote,
+            // so we use a file:// URL pointing to the local assets directory.
+            // In production, WebviewUrl::App works fine (bundled assets).
+            let sidebar_url = if cfg!(debug_assertions) {
+                let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+                let sidebar_path = manifest_dir.join("assets").join("sidebar.html");
+                WebviewUrl::External(
+                    format!("file://{}", sidebar_path.display()).parse()
+                        .map_err(|e| tauri::Error::AssetNotFound(format!("{}", e)))?
+                )
+            } else {
+                WebviewUrl::App("sidebar.html".into())
+            };
             let sidebar_builder = tauri::webview::WebviewBuilder::new(
                 "sidebar",
-                WebviewUrl::App("sidebar.html".into()),
+                sidebar_url,
             );
 
             let _sidebar = window.add_child(
@@ -352,12 +365,15 @@ fn main() {
             .user_agent(&format!("EvolveApp/{} Tauri/2", env!("CARGO_PKG_VERSION")))
             .background_color(tauri::window::Color(15, 15, 25, 255))
             .on_page_load(move |webview, payload| {
+                let url_str = payload.url().to_string();
                 match payload.event() {
                     PageLoadEvent::Started => {
+                        println!("[page-load] Started: {}", url_str);
                         let _ = app_handle.emit_to("sidebar", "content-loading", true);
                         return;
                     }
                     PageLoadEvent::Finished => {
+                        println!("[page-load] Finished: {}", url_str);
                         let _ = app_handle.emit_to("sidebar", "content-loaded", true);
                     }
                     _ => return,
