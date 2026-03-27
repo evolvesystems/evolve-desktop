@@ -32,27 +32,6 @@ fn nav_content(app: &tauri::AppHandle, url: &str) {
     run_js(app, "content", &format!("window.location.href='{}'", url.replace('\'', "\\'")));
 }
 
-/// Show or hide the loading overlay webview
-fn show_loading_overlay(app: &tauri::AppHandle, show: bool) {
-    if let Some(loading) = app.get_webview("loading") {
-        if show {
-            // Move loading overlay on top of content area
-            if let Some(win) = app.get_window("main") {
-                let scale = win.scale_factor().unwrap_or(1.0);
-                if let Ok(phys) = win.inner_size() {
-                    let w = phys.width as f64 / scale;
-                    let h = phys.height as f64 / scale;
-                    let _ = loading.set_position(tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0));
-                    let _ = loading.set_size(tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h));
-                }
-            }
-        } else {
-            // Move off-screen to hide
-            let _ = loading.set_position(tauri::LogicalPosition::new(-9999.0, -9999.0));
-            let _ = loading.set_size(tauri::LogicalSize::new(0.0, 0.0));
-        }
-    }
-}
 
 // =====================================================================
 //  TAURI COMMANDS
@@ -372,18 +351,87 @@ fn main() {
             )
             .user_agent(&format!("EvolveApp/{} Tauri/2", env!("CARGO_PKG_VERSION")))
             .background_color(tauri::window::Color(15, 15, 25, 255))
+            .initialization_script(r##"
+// EvolveApp loading overlay — injected at document-start on every page
+(function(){
+  // Inject styles immediately (before body exists)
+  var s = document.createElement('style');
+  s.textContent = [
+    '#evolve-loader {',
+    '  position:fixed; inset:0; z-index:99998;',
+    '  display:flex; align-items:center; justify-content:center;',
+    '  background:#0f0f19; font-family:system-ui,-apple-system,sans-serif;',
+    '  opacity:1; transition:opacity 0.25s ease;',
+    '}',
+    '#evolve-loader.hide { opacity:0; pointer-events:none; }',
+    '@keyframes evolve-spin { to { transform:rotate(360deg) } }',
+    '#evolve-loader .dot-container { display:flex; gap:6px; }',
+    '#evolve-loader .dot {',
+    '  width:10px; height:10px; border-radius:50%;',
+    '  background:rgba(59,130,246,0.8);',
+    '  animation:evolve-bounce 1.2s ease-in-out infinite;',
+    '}',
+    '#evolve-loader .dot:nth-child(2) { animation-delay:0.15s; }',
+    '#evolve-loader .dot:nth-child(3) { animation-delay:0.3s; }',
+    '@keyframes evolve-bounce {',
+    '  0%,80%,100% { transform:scale(0.4); opacity:0.3; }',
+    '  40% { transform:scale(1); opacity:1; }',
+    '}',
+  ].join('');
+  (document.head || document.documentElement).appendChild(s);
+
+  // Show loader immediately
+  var d = document.createElement('div');
+  d.id = 'evolve-loader';
+  d.innerHTML = '<div class="dot-container"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+  (document.body || document.documentElement).appendChild(d);
+
+  // Hide when page is rendered
+  function hide() {
+    var el = document.getElementById('evolve-loader');
+    if (!el) return;
+    el.classList.add('hide');
+    setTimeout(function() { el.remove(); }, 300);
+  }
+
+  if (document.readyState === 'complete') { hide(); }
+  else { window.addEventListener('load', hide); }
+
+  // Show loader when leaving page (before unload destroys DOM)
+  window.addEventListener('beforeunload', function() {
+    var el = document.getElementById('evolve-loader');
+    if (el) { el.classList.remove('hide'); return; }
+    var d2 = document.createElement('div');
+    d2.id = 'evolve-loader';
+    d2.innerHTML = '<div class="dot-container"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+    document.body.appendChild(d2);
+  });
+
+  // Also catch link clicks — show loader before navigation starts
+  document.addEventListener('click', function(e) {
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!a) return;
+    var href = a.getAttribute('href');
+    if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+    if (a.target === '_blank') return;
+    var el = document.getElementById('evolve-loader');
+    if (el) { el.classList.remove('hide'); }
+    else {
+      var d3 = document.createElement('div');
+      d3.id = 'evolve-loader';
+      d3.innerHTML = '<div class="dot-container"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+      document.body.appendChild(d3);
+    }
+  }, true);
+})();
+            "##)
             .on_page_load(move |webview, payload| {
                 match payload.event() {
                     PageLoadEvent::Started => {
                         let _ = app_handle.emit_to("sidebar", "content-loading", true);
-                        // Show loading overlay on top of content
-                        show_loading_overlay(&app_handle, true);
                         return;
                     }
-                    PageLoadEvent::Finished => {
-                        // Hide loading overlay
-                        show_loading_overlay(&app_handle, false);
-                    }
+                    PageLoadEvent::Finished => {}
                     _ => return,
                 }
 
@@ -421,19 +469,6 @@ fn main() {
 
             let _content = window.add_child(
                 content_builder,
-                tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0),
-                tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
-            )?;
-
-            // Loading overlay webview — created AFTER content so it renders on top.
-            // Visible initially (covers content while first page loads), hidden on Finished.
-            let loading_builder = tauri::webview::WebviewBuilder::new(
-                "loading",
-                WebviewUrl::App("loading.html".into()),
-            );
-
-            let _loading = window.add_child(
-                loading_builder,
                 tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0),
                 tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
             )?;
