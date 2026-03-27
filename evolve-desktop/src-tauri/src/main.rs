@@ -98,6 +98,44 @@ async fn toggle_sidebar_config(app: tauri::AppHandle, open: bool) -> Result<(), 
     Ok(())
 }
 
+/// Show info modal centered in content webview
+#[tauri::command]
+async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
+    let version = env!("CARGO_PKG_VERSION").to_string();
+    let js = format!(r##"
+(function() {{
+  if (document.getElementById('evolve-info-modal')) {{
+    document.getElementById('evolve-info-modal').remove();
+    return;
+  }}
+  var overlay = document.createElement('div');
+  overlay.id = 'evolve-info-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);font-family:system-ui,-apple-system,sans-serif;';
+  overlay.innerHTML = '<div style="background:#1e1e2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:32px;min-width:340px;max-width:420px;color:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.5);position:relative;">'
+    + '<button id="evolve-info-close" style="position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:8px;border:none;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.6);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;">&times;</button>'
+    + '<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">'
+    + '<div style="width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#9333ea,#3b82f6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:20px;flex-shrink:0;">E</div>'
+    + '<div><div style="font-size:18px;font-weight:600;">EvolveApp Desktop</div><div style="font-size:13px;color:rgba(255,255,255,0.5);margin-top:2px;">Business Management Suite</div></div></div>'
+    + '<div style="background:rgba(255,255,255,0.05);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;">'
+    + '<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:rgba(255,255,255,0.5);">Version</span><span style="font-weight:500;">v{ver}</span></div>'
+    + '<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:rgba(255,255,255,0.5);">Latest</span><span id="evolve-info-latest" style="font-weight:500;">checking...</span></div>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+  overlay.onclick = function(e) {{ if (e.target === overlay) overlay.remove(); }};
+  document.getElementById('evolve-info-close').onclick = function() {{ overlay.remove(); }};
+  document.getElementById('evolve-info-close').onmouseenter = function() {{ this.style.background='rgba(255,255,255,0.15)'; this.style.color='#fff'; }};
+  document.getElementById('evolve-info-close').onmouseleave = function() {{ this.style.background='rgba(255,255,255,0.08)'; this.style.color='rgba(255,255,255,0.6)'; }};
+  fetch('https://evolvepreneuriq.app/api/v1/desktop/version').then(function(r){{ return r.json(); }}).then(function(d){{
+    var el = document.getElementById('evolve-info-latest');
+    if (el && d.version) {{ el.textContent = 'v' + d.version; }}
+  }}).catch(function(){{}});
+}})();
+"##, ver = version);
+    run_js(&app, "content", &js);
+    Ok(())
+}
+
 /// Called from content webview JS to relay tabs data to sidebar
 #[tauri::command]
 async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
@@ -146,6 +184,7 @@ fn main() {
             content_go_back,
             content_reload,
             toggle_sidebar_config,
+            show_info_modal,
             save_tabs_via_content,
             relay_tabs_to_sidebar,
             relay_badges_to_sidebar,
