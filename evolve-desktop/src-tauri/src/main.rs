@@ -14,6 +14,7 @@ use tauri::{
     webview::PageLoadEvent,
     Emitter, Manager, WebviewUrl,
 };
+use tauri_plugin_updater::UpdaterExt;
 use std::fs;
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
@@ -120,12 +121,19 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
     + '<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:rgba(255,255,255,0.5);">Version</span><span style="font-weight:500;">v{ver}</span></div>'
     + '<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:rgba(255,255,255,0.5);">Latest</span><span id="evolve-info-latest" style="font-weight:500;">checking...</span></div>'
     + '</div>'
+    + '<button id="evolve-info-check-update" style="width:100%;margin-top:16px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:system-ui;transition:all 0.15s;">Check for Updates</button>'
     + '</div>';
   document.body.appendChild(overlay);
   overlay.onclick = function(e) {{ if (e.target === overlay) overlay.remove(); }};
   document.getElementById('evolve-info-close').onclick = function() {{ overlay.remove(); }};
   document.getElementById('evolve-info-close').onmouseenter = function() {{ this.style.background='rgba(255,255,255,0.15)'; this.style.color='#fff'; }};
   document.getElementById('evolve-info-close').onmouseleave = function() {{ this.style.background='rgba(255,255,255,0.08)'; this.style.color='rgba(255,255,255,0.6)'; }};
+  document.getElementById('evolve-info-check-update').onclick = function() {{
+    this.textContent = 'Checking...';
+    this.disabled = true;
+    overlay.remove();
+    window.__TAURI_INTERNALS__.invoke('check_for_updates');
+  }};
   fetch('https://evolvepreneuriq.app/api/v1/desktop/version').then(function(r){{ return r.json(); }}).then(function(d){{
     var el = document.getElementById('evolve-info-latest');
     if (el && d.version) {{ el.textContent = 'v' + d.version; }}
@@ -134,6 +142,120 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
 "##, ver = version);
     run_js(&app, "content", &js);
     Ok(())
+}
+
+/// Check for updates using tauri-plugin-updater, show progress in content webview
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+
+    match update {
+        Some(update) => {
+            let version = update.version.clone();
+            let body = update.body.clone().unwrap_or_default();
+
+            // Show update-available modal in content webview
+            let js = format!(
+                r##"
+(function() {{
+  if (document.getElementById('evolve-update-modal')) document.getElementById('evolve-update-modal').remove();
+  var o = document.createElement('div');
+  o.id = 'evolve-update-modal';
+  o.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);font-family:system-ui,-apple-system,sans-serif;';
+  o.innerHTML = '<div style="background:#1e1e2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:32px;min-width:380px;max-width:460px;color:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.5);position:relative;">'
+    + '<div style="font-size:18px;font-weight:600;margin-bottom:6px;">Update Available</div>'
+    + '<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">Version {ver} is ready to install</div>'
+    + '<div id="evolve-update-notes" style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;max-height:120px;overflow-y:auto;white-space:pre-wrap;">{notes}</div>'
+    + '<div id="evolve-update-progress" style="display:none;margin-bottom:16px;">'
+    + '<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;" id="evolve-update-status">Downloading...</div>'
+    + '<div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;"><div id="evolve-update-bar" style="height:100%;background:#3b82f6;border-radius:3px;width:0%;transition:width 0.3s;"></div></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;">'
+    + '<button id="evolve-update-install" style="flex:1;padding:10px;border-radius:10px;border:none;background:#3b82f6;color:#fff;font-size:13px;font-weight:500;cursor:pointer;font-family:system-ui;">Install &amp; Restart</button>'
+    + '<button id="evolve-update-later" style="flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;font-family:system-ui;">Later</button>'
+    + '</div></div>';
+  document.body.appendChild(o);
+  o.onclick = function(e) {{ if (e.target === o) o.remove(); }};
+  document.getElementById('evolve-update-later').onclick = function() {{ o.remove(); }};
+  document.getElementById('evolve-update-install').onclick = function() {{
+    document.getElementById('evolve-update-install').disabled = true;
+    document.getElementById('evolve-update-install').textContent = 'Downloading...';
+    document.getElementById('evolve-update-install').style.opacity = '0.6';
+    document.getElementById('evolve-update-later').style.display = 'none';
+    document.getElementById('evolve-update-progress').style.display = 'block';
+    window.__TAURI_INTERNALS__.invoke('install_update');
+  }};
+}})();
+"##,
+                ver = version,
+                notes = body.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('"', "&quot;")
+            );
+            run_js(&app, "content", &js);
+
+            // Store the update in app state for install_update to use
+            app.manage(PendingUpdate(std::sync::Mutex::new(Some(update))));
+        }
+        None => {
+            // No update available — show brief toast
+            run_js(&app, "content", r##"
+(function() {
+  var t = document.createElement('div');
+  t.style.cssText = 'position:fixed;top:20px;right:20px;z-index:99999;background:#1e1e2e;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:12px 20px;color:#fff;font-size:13px;font-family:system-ui;box-shadow:0 8px 24px rgba(0,0,0,0.4);';
+  t.textContent = 'You are on the latest version!';
+  document.body.appendChild(t);
+  setTimeout(function() { t.remove(); }, 3000);
+})();
+"##);
+        }
+    }
+
+    Ok(())
+}
+
+struct PendingUpdate(std::sync::Mutex<Option<tauri_plugin_updater::Update>>);
+
+/// Called when user clicks "Install & Restart" — downloads and installs the update
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let update = {
+        let state = app.try_state::<PendingUpdate>()
+            .ok_or("No pending update")?;
+        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        guard.take().ok_or("Update already consumed")?
+    };
+
+    let app2 = app.clone();
+    let app3 = app.clone();
+    let mut downloaded: u64 = 0;
+
+    update.download_and_install(
+        move |chunk_len, total_len| {
+            downloaded += chunk_len as u64;
+            let total_str = match total_len {
+                Some(t) if t > 0 => format!(" / {:.1} MB", t as f64 / 1_048_576.0),
+                _ => String::new(),
+            };
+            let bar_width = match total_len {
+                Some(t) if t > 0 => format!("{}%", (downloaded * 100) / t),
+                _ => "50%".into(),
+            };
+            let js = format!(
+                "document.getElementById('evolve-update-status').textContent='Downloading... {:.1} MB{}';document.getElementById('evolve-update-bar').style.width='{}';",
+                downloaded as f64 / 1_048_576.0, total_str, bar_width
+            );
+            run_js(&app2, "content", &js);
+        },
+        move || {
+            run_js(&app3, "content",
+                "document.getElementById('evolve-update-status').textContent='Installing... app will restart';document.getElementById('evolve-update-bar').style.width='100%';"
+            );
+        },
+    ).await.map_err(|e| e.to_string())?;
+
+    // The app should restart automatically after install.
+    // If it doesn't (some platforms), force a relaunch:
+    app.restart();
 }
 
 /// Called from content webview JS to relay tabs data to sidebar
@@ -185,6 +307,8 @@ fn main() {
             content_reload,
             toggle_sidebar_config,
             show_info_modal,
+            check_for_updates,
+            install_update,
             save_tabs_via_content,
             relay_tabs_to_sidebar,
             relay_badges_to_sidebar,
@@ -309,6 +433,32 @@ fn main() {
                             }
                         }
                     }
+                });
+            }
+
+            // --- Auto-update check (5s after startup, silent) ---
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    tauri::async_runtime::block_on(async {
+                        let updater = match handle.updater() {
+                            Ok(u) => u,
+                            Err(_) => return,
+                        };
+                        match updater.check().await {
+                            Ok(Some(update)) => {
+                                let version = update.version.clone();
+                                let js = format!(
+                                    "document.getElementById('version-label').textContent='v{} \u{2B06}\u{FE0F}';document.getElementById('btn-info').title='Update available: v{}';",
+                                    version, version
+                                );
+                                run_js(&handle, "sidebar", &js);
+                                handle.manage(PendingUpdate(std::sync::Mutex::new(Some(update))));
+                            }
+                            _ => {}
+                        }
+                    });
                 });
             }
 
