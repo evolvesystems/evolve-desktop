@@ -262,20 +262,32 @@ jobs:
           # Add to search list (don't set as default — that breaks other steps)
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
-          # Find the signing identity from the imported cert
-          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -o '"[^"]*"' | head -1 | tr -d '"')
-          if [ -z "$IDENTITY" ]; then
-            echo "ERROR: No codesigning identity found in imported certificate!"
-            echo "This means the .p12 doesn't contain a Developer ID Application cert."
-            security find-identity -v "$KEYCHAIN_PATH"
+          # List all identities for debugging
+          echo "All identities in keychain:"
+          security find-identity -v "$KEYCHAIN_PATH"
+
+          # Find Developer ID Application cert (for signing .app)
+          APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          # Find Developer ID Installer cert (for signing .pkg)
+          PKG_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+
+          if [ -z "$APP_IDENTITY" ]; then
+            echo "WARNING: No 'Developer ID Application' cert found — trying any codesigning identity"
+            APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -o '"[^"]*"' | head -1 | tr -d '"')
+          fi
+
+          if [ -z "$APP_IDENTITY" ]; then
+            echo "ERROR: No codesigning identity found at all!"
             echo "has_cert=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          echo "Found signing identity: $IDENTITY"
+          echo "App signing identity: $APP_IDENTITY"
+          echo "Pkg signing identity: ${PKG_IDENTITY:-none}"
           echo "has_cert=true" >> $GITHUB_OUTPUT
           echo "keychain_path=$KEYCHAIN_PATH" >> $GITHUB_OUTPUT
-          echo "signing_identity=$IDENTITY" >> $GITHUB_OUTPUT
+          echo "signing_identity=$APP_IDENTITY" >> $GITHUB_OUTPUT
+          echo "pkg_identity=$PKG_IDENTITY" >> $GITHUB_OUTPUT
           echo "Certificate imported successfully"
 
       - name: Sign macOS app
@@ -377,6 +389,62 @@ jobs:
           xcrun stapler staple "$DMG_FILE"
           echo "Notarization complete! App will be trusted by Gatekeeper."
 
+      # Build signed PKG installer
+      - name: Build PKG installer
+        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos') && steps.keychain.outputs.has_cert == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "No .app bundle — skipping PKG"
+            exit 0
+          fi
+
+          VERSION=$(jq -r '.version' evolve-desktop/src-tauri/tauri.conf.json)
+          PKG_DIR="evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg"
+          mkdir -p "$PKG_DIR"
+
+          PKG_IDENTITY="${{ steps.keychain.outputs.pkg_identity }}"
+
+          # Build component pkg
+          pkgbuild \
+            --root "$APP_BUNDLE" \
+            --install-location "/Applications/EvolveApp.app" \
+            --identifier "com.evolveapp.desktop" \
+            --version "$VERSION" \
+            "${RUNNER_TEMP}/EvolveApp-component.pkg"
+
+          # Build product archive
+          if [ -n "$PKG_IDENTITY" ]; then
+            echo "Signing PKG with: $PKG_IDENTITY"
+            productbuild \
+              --package "${RUNNER_TEMP}/EvolveApp-component.pkg" \
+              --sign "$PKG_IDENTITY" \
+              "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
+          else
+            echo "No Installer cert — building unsigned PKG"
+            productbuild \
+              --package "${RUNNER_TEMP}/EvolveApp-component.pkg" \
+              "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
+          fi
+
+          echo "PKG created: $(ls -lh "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg")"
+
+          # Notarize PKG
+          if [ -n "$PKG_IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "Submitting PKG for notarization..."
+            xcrun notarytool submit "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+            xcrun stapler staple "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
+            echo "PKG notarized and stapled!"
+          fi
+
       # Clean up temporary keychain
       - name: Clean up keychain
         if: always() && steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
@@ -446,6 +514,7 @@ jobs:
           path: |
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg/*.dmg
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg/*.dmg.sig
+            evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg/*.pkg
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/**/*.json
 
   release:
@@ -486,6 +555,7 @@ jobs:
             artifacts/**/*.exe.sig
             artifacts/**/*.dmg
             artifacts/**/*.dmg.sig
+            artifacts/**/*.pkg
             artifacts/**/*.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
