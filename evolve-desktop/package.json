@@ -1,7 +1,7 @@
 {
   "name": "evolve-desktop",
   "private": true,
-  "version": "1.0.31",
+  "version": "2.3.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
