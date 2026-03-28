@@ -62,7 +62,7 @@
       "endpoints": [
         "https://evolvepreneuriq.app/api/v1/desktop/updates/{{target}}/{{current_version}}"
       ],
-      "pubkey": "RWRUFs2e3/jNpUJAR8DjOGAQhbh6WsT4v7uaXDH5kGEFVbYFyz9TIQyc"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzQzZBRjIyQ0IzOUMyMjMKUldRandqbkxJcS9HOHlTT2ZCcUE3YUptVGtLM004Y0RmRzhRSVZEVjAzc01ndGVDV1lWVVlqZkoK"
     }
   }
 }

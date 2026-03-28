@@ -65,18 +65,21 @@ body::-webkit-scrollbar { width:0; }
 #add-form .add-btn { width:100%; padding:7px; border-radius:6px; border:none; background:#3b82f6; color:#fff; font-size:11px; cursor:pointer; font-family:system-ui; }
 #add-form .reset-btn { margin-top:8px; width:100%; padding:7px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); background:none; color:rgba(255,255,255,0.4); font-size:11px; cursor:pointer; font-family:system-ui; }
 
+/* Info popup — compact tooltip style, fits within sidebar */
+#info-popup { position:fixed; bottom:52px; left:4px; width:48px; background:oklch(0.22 0.006 285.88); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:6px; z-index:20; box-shadow:0 4px 12px rgba(0,0,0,0.4); display:none; text-align:center; }
+#info-popup.open { display:block; }
+#info-popup .title { display:none; }
+#info-popup .ver { font-size:8px; color:rgba(255,255,255,0.6); margin-bottom:2px; line-height:1.2; }
+#info-popup .update-link { display:block; padding:4px; border-radius:4px; background:#3b82f6; color:#fff; text-decoration:none; font-size:7px; text-align:center; font-weight:500; margin-top:4px; }
+
 /* Save indicator */
 #save-indicator { position:fixed; top:8px; left:60px; z-index:30; padding:4px 12px; border-radius:6px; font-size:11px; opacity:0; transition:opacity 0.3s; pointer-events:none; }
 
-/* Loading indicator — indeterminate sliding bar */
-#loading-bar { position:fixed; top:0; left:0; right:0; height:3px; z-index:50; overflow:hidden; opacity:0; transition:opacity 0.2s ease; }
-#loading-bar.active { opacity:1; }
-#loading-bar .track { position:absolute; top:0; left:0; width:40%; height:100%; background:linear-gradient(90deg, transparent, #3b82f6, #818cf8, #3b82f6, transparent); border-radius:2px; box-shadow:0 0 10px rgba(59,130,246,0.5); animation:slide 1.2s ease-in-out infinite; }
-@keyframes slide { 0% { left:-40%; } 100% { left:100%; } }
-
-/* Pulsing logo during load */
-.logo.loading { animation:logo-pulse 1.2s ease-in-out infinite; box-shadow:0 0 12px rgba(59,130,246,0.5); }
-@keyframes logo-pulse { 0%,100% { box-shadow:0 0 4px rgba(59,130,246,0.2); } 50% { box-shadow:0 0 16px rgba(59,130,246,0.6); } }
+/* Loading indicator */
+#loading-bar { position:fixed; top:0; left:0; right:0; height:2px; background:#3b82f6; z-index:50; transform:scaleX(0); transform-origin:left; transition:transform 0.3s ease; }
+#loading-bar.loading { transform:scaleX(0.7); transition:transform 8s cubic-bezier(0.1, 0.05, 0, 1); }
+#loading-bar.done { transform:scaleX(1); transition:transform 0.2s ease; }
+#loading-bar.hidden { opacity:0; transition:opacity 0.3s ease 0.2s; }
 </style>
 </head>
 <body>
@@ -115,7 +118,16 @@ body::-webkit-scrollbar { width:0; }
   </div>
 </div>
 
-<div id="loading-bar"><div class="track"></div></div>
+<div id="info-popup">
+  <div class="title">EvolveApp Desktop</div>
+  <div class="ver">Version: <span id="info-current-ver">checking...</span></div>
+  <div class="ver">Latest: <span id="info-latest-ver">checking...</span></div>
+  <div id="info-update-section" style="display:none">
+    <a class="update-link" id="info-update-link" href="#">Download Update</a>
+  </div>
+</div>
+
+<div id="loading-bar"></div>
 <div id="save-indicator"></div>
 
 <script>
@@ -160,12 +172,16 @@ var configOpen = false;
 
 // Loading indicator
 function showLoading() {
-    document.getElementById('loading-bar').classList.add('active');
-    document.getElementById('logo-btn').classList.add('loading');
+    var bar = document.getElementById('loading-bar');
+    bar.className = '';
+    void bar.offsetWidth; // force reflow
+    bar.className = 'loading';
 }
 function hideLoading() {
-    document.getElementById('loading-bar').classList.remove('active');
-    document.getElementById('logo-btn').classList.remove('loading');
+    var bar = document.getElementById('loading-bar');
+    bar.className = 'done';
+    setTimeout(function() { bar.className = 'done hidden'; }, 200);
+    setTimeout(function() { bar.className = ''; }, 600);
 }
 
 function makeSvg(name) {
@@ -290,6 +306,9 @@ function renderConfigList() {
 }
 
 function toggleConfig() {
+    // Close info popup if open
+    document.getElementById('info-popup').classList.remove('open');
+
     configOpen = !configOpen;
     document.getElementById('config-panel').classList.toggle('open', configOpen);
     document.getElementById('btn-settings').classList.toggle('open', configOpen);
@@ -347,7 +366,17 @@ function showIndicator(text, color) {
 async function checkVersion() {
     try {
         var ver = await invoke('get_app_version');
+        document.getElementById('info-current-ver').textContent = 'v' + ver;
         document.getElementById('version-label').textContent = 'v' + ver;
+    } catch(e) {}
+
+    // Check latest version from server
+    try {
+        var resp = await fetch(APP + '/api/v1/desktop/version');
+        if (resp.ok) {
+            var data = await resp.json();
+            document.getElementById('info-latest-ver').textContent = data.version ? 'v' + data.version : 'unknown';
+        }
     } catch(e) {}
 }
 
@@ -364,33 +393,24 @@ if (window.__TAURI_INTERNALS__) {
             hideLoading();
             renderTabs();
         }
-    }).catch(function() {});
-
-    // Fallback: poll for URL changes (always runs as safety net)
-    setInterval(async function() {
-        try {
-            var url = await invoke('get_content_url');
-            if (url !== currentUrl) {
-                currentUrl = url;
-                hideLoading();
-                renderTabs();
-            }
-        } catch(e) {}
-    }, 1000);
+    }).catch(function() {
+        // Fallback: poll for URL changes
+        setInterval(async function() {
+            try {
+                var url = await invoke('get_content_url');
+                if (url !== currentUrl) {
+                    currentUrl = url;
+                    renderTabs();
+                }
+            } catch(e) {}
+        }, 1000);
+    });
 
     // Listen for loading started
     window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
         event: 'content-loading',
         handler: function() {
             showLoading();
-        }
-    }).catch(function() {});
-
-    // Listen for loading finished
-    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
-        event: 'content-loaded',
-        handler: function() {
-            hideLoading();
         }
     }).catch(function() {});
 
@@ -455,7 +475,7 @@ document.getElementById('btn-copy').onclick = async function() {
     } catch(e) {}
 };
 document.getElementById('btn-info').onclick = function() {
-    invoke('show_info_modal');
+    document.getElementById('info-popup').classList.toggle('open');
 };
 document.getElementById('btn-settings').onclick = toggleConfig;
 document.getElementById('btn-close-config').onclick = function() {
