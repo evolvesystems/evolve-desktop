@@ -250,10 +250,12 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-          # Import certificate into keychain
+          # Import certificate + private keys into keychain
+          # NOTE: do NOT use -t cert — that imports certs only (no private keys),
+          # causing find-identity to miss them. -f pkcs12 is sufficient.
           security import "$CERTIFICATE_PATH" \
             -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
+            -A -f pkcs12 \
             -k "$KEYCHAIN_PATH"
 
           # Allow codesign to access the keychain without prompt
@@ -277,15 +279,22 @@ jobs:
             APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -o '"[^"]*"' | head -1 | tr -d '"')
           fi
 
-          if [ -z "$APP_IDENTITY" ]; then
-            echo "ERROR: No codesigning identity found at all!"
+          # Report what we found
+          echo "App signing identity: ${APP_IDENTITY:-NONE}"
+          echo "Pkg signing identity: ${PKG_IDENTITY:-NONE}"
+
+          # We need at least ONE identity to proceed
+          if [ -z "$APP_IDENTITY" ] && [ -z "$PKG_IDENTITY" ]; then
+            echo "ERROR: No signing identities found at all!"
             echo "has_cert=false" >> $GITHUB_OUTPUT
+            echo "has_app_cert=false" >> $GITHUB_OUTPUT
+            echo "has_pkg_cert=false" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          echo "App signing identity: $APP_IDENTITY"
-          echo "Pkg signing identity: ${PKG_IDENTITY:-none}"
           echo "has_cert=true" >> $GITHUB_OUTPUT
+          echo "has_app_cert=$([ -n "$APP_IDENTITY" ] && echo true || echo false)" >> $GITHUB_OUTPUT
+          echo "has_pkg_cert=$([ -n "$PKG_IDENTITY" ] && echo true || echo false)" >> $GITHUB_OUTPUT
           echo "keychain_path=$KEYCHAIN_PATH" >> $GITHUB_OUTPUT
           echo "signing_identity=$APP_IDENTITY" >> $GITHUB_OUTPUT
           echo "pkg_identity=$PKG_IDENTITY" >> $GITHUB_OUTPUT
@@ -300,7 +309,7 @@ jobs:
             exit 0
           fi
 
-          if [ "${{ steps.keychain.outputs.has_cert }}" = "true" ]; then
+          if [ "${{ steps.keychain.outputs.has_app_cert }}" = "true" ]; then
             IDENTITY="${{ steps.keychain.outputs.signing_identity }}"
             ENTITLEMENTS="evolve-desktop/src-tauri/Entitlements.plist"
             echo "Signing with: $IDENTITY"
@@ -442,9 +451,9 @@ jobs:
           xcrun stapler staple "$DMG_FILE"
           echo "Notarization complete! App will be trusted by Gatekeeper."
 
-      # Build signed PKG installer
+      # Build signed PKG installer (runs even without Application cert — only needs Installer cert for signing)
       - name: Build PKG installer
-        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos') && steps.keychain.outputs.has_cert == 'true'
+        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
