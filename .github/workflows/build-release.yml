@@ -266,13 +266,14 @@ jobs:
           echo "All identities in keychain:"
           security find-identity -v "$KEYCHAIN_PATH"
 
-          # Find Developer ID Application cert (for signing .app)
-          APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          # Find Developer ID Installer cert (for signing .pkg)
-          PKG_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          # Extract identities using the grep-o approach that was working before.
+          # sed 's/.*"\(.*\)".*/\1/' is greedy and breaks on multi-quoted lines.
+          APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | grep -o '"[^"]*"' | head -1 | tr -d '"')
+          PKG_IDENTITY=$(security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" | grep -o '"[^"]*"' | head -1 | tr -d '"')
 
+          # Fallback: use any codesigning identity (matches original working logic)
           if [ -z "$APP_IDENTITY" ]; then
-            echo "WARNING: No 'Developer ID Application' cert found — trying any codesigning identity"
+            echo "WARNING: No 'Developer ID Application' cert found — using first codesigning identity"
             APP_IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -o '"[^"]*"' | head -1 | tr -d '"')
           fi
 
@@ -301,14 +302,49 @@ jobs:
 
           if [ "${{ steps.keychain.outputs.has_cert }}" = "true" ]; then
             IDENTITY="${{ steps.keychain.outputs.signing_identity }}"
+            ENTITLEMENTS="evolve-desktop/src-tauri/Entitlements.plist"
             echo "Signing with: $IDENTITY"
-            codesign --force --options runtime --deep \
+
+            # Sign inside-out: nested binaries/dylibs first, then the .app
+            # --deep is unreliable and Apple rejects notarization if any nested
+            # component is unsigned or missing hardened runtime.
+            echo "Signing nested libraries and frameworks..."
+            find "$APP_BUNDLE" -type f \( -name "*.dylib" -o -name "*.so" \) | while read lib; do
+              echo "  Signing: $lib"
+              codesign --force --options runtime --sign "$IDENTITY" --timestamp "$lib"
+            done
+
+            # Sign any nested .app bundles or frameworks
+            find "$APP_BUNDLE/Contents/Frameworks" -depth -type d -name "*.framework" 2>/dev/null | while read fw; do
+              echo "  Signing framework: $fw"
+              codesign --force --options runtime --sign "$IDENTITY" --timestamp "$fw"
+            done
+
+            # Sign helper executables
+            find "$APP_BUNDLE/Contents/MacOS" -type f -perm +111 ! -name "$(basename "$APP_BUNDLE" .app)" | while read helper; do
+              echo "  Signing helper: $helper"
+              codesign --force --options runtime --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" --timestamp "$helper"
+            done
+
+            # Sign the main binary
+            MAIN_BIN="$APP_BUNDLE/Contents/MacOS/$(basename "$APP_BUNDLE" .app)"
+            if [ -f "$MAIN_BIN" ]; then
+              echo "Signing main binary: $MAIN_BIN"
+              codesign --force --options runtime --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" --timestamp "$MAIN_BIN"
+            fi
+
+            # Sign the outer .app bundle
+            echo "Signing app bundle..."
+            codesign --force --options runtime \
               --sign "$IDENTITY" \
-              --entitlements evolve-desktop/src-tauri/Entitlements.plist \
+              --entitlements "$ENTITLEMENTS" \
               --timestamp \
               "$APP_BUNDLE"
+
             echo "Verifying signature..."
             codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
+            echo "Checking Gatekeeper acceptance..."
+            spctl --assess --type exec --verbose=2 "$APP_BUNDLE" || echo "WARNING: spctl check failed — notarization required"
             echo "Signature valid!"
           else
             echo "WARNING: No certificate available — falling back to ad-hoc signing"
@@ -384,7 +420,24 @@ jobs:
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait \
+            --timeout 600 2>&1 | tee "${RUNNER_TEMP}/notarize-dmg.log"
+          NOTARY_STATUS=${PIPESTATUS[0]}
+
+          if [ $NOTARY_STATUS -ne 0 ]; then
+            echo "ERROR: Notarization FAILED!"
+            # Try to get the log for details
+            SUBMISSION_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${RUNNER_TEMP}/notarize-dmg.log" | head -1)
+            if [ -n "$SUBMISSION_ID" ]; then
+              echo "Fetching notarization log for $SUBMISSION_ID..."
+              xcrun notarytool log "$SUBMISSION_ID" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_APP_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" || true
+            fi
+            exit 1
+          fi
+
           echo "Stapling notarization ticket to DMG..."
           xcrun stapler staple "$DMG_FILE"
           echo "Notarization complete! App will be trusted by Gatekeeper."
@@ -409,10 +462,10 @@ jobs:
 
           PKG_IDENTITY="${{ steps.keychain.outputs.pkg_identity }}"
 
-          # Build component pkg
+          # Build component pkg (--component installs the .app bundle as-is into /Applications)
           pkgbuild \
-            --root "$APP_BUNDLE" \
-            --install-location "/Applications/EvolveApp.app" \
+            --component "$APP_BUNDLE" \
+            --install-location "/Applications" \
             --identifier "com.evolveapp.desktop" \
             --version "$VERSION" \
             "${RUNNER_TEMP}/EvolveApp-component.pkg"
@@ -435,13 +488,29 @@ jobs:
 
           # Notarize PKG
           if [ -n "$PKG_IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            PKG_FILE="$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
             echo "Submitting PKG for notarization..."
-            xcrun notarytool submit "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg" \
+            xcrun notarytool submit "$PKG_FILE" \
               --apple-id "$APPLE_ID" \
               --password "$APPLE_APP_PASSWORD" \
               --team-id "$APPLE_TEAM_ID" \
-              --wait
-            xcrun stapler staple "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
+              --wait \
+              --timeout 600 2>&1 | tee "${RUNNER_TEMP}/notarize-pkg.log"
+            NOTARY_STATUS=${PIPESTATUS[0]}
+
+            if [ $NOTARY_STATUS -ne 0 ]; then
+              echo "ERROR: PKG notarization FAILED!"
+              SUBMISSION_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${RUNNER_TEMP}/notarize-pkg.log" | head -1)
+              if [ -n "$SUBMISSION_ID" ]; then
+                xcrun notarytool log "$SUBMISSION_ID" \
+                  --apple-id "$APPLE_ID" \
+                  --password "$APPLE_APP_PASSWORD" \
+                  --team-id "$APPLE_TEAM_ID" || true
+              fi
+              exit 1
+            fi
+
+            xcrun stapler staple "$PKG_FILE"
             echo "PKG notarized and stapled!"
           fi
 
