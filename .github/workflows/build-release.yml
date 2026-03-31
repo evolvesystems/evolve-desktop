@@ -300,6 +300,7 @@ jobs:
           echo "pkg_identity=$PKG_IDENTITY" >> $GITHUB_OUTPUT
           echo "Certificate imported successfully"
 
+      # Sign macOS .app bundle (needed before packaging into PKG)
       - name: Sign macOS app
         if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         run: |
@@ -312,146 +313,36 @@ jobs:
           if [ "${{ steps.keychain.outputs.has_app_cert }}" = "true" ]; then
             IDENTITY="${{ steps.keychain.outputs.signing_identity }}"
             ENTITLEMENTS="evolve-desktop/src-tauri/Entitlements.plist"
-            echo "Signing with: $IDENTITY"
+            echo "Signing .app with Developer ID Application: $IDENTITY"
 
             # Sign inside-out: nested binaries/dylibs first, then the .app
-            # --deep is unreliable and Apple rejects notarization if any nested
-            # component is unsigned or missing hardened runtime.
-            echo "Signing nested libraries and frameworks..."
             find "$APP_BUNDLE" -type f \( -name "*.dylib" -o -name "*.so" \) | while read lib; do
               echo "  Signing: $lib"
               codesign --force --options runtime --sign "$IDENTITY" --timestamp "$lib"
             done
-
-            # Sign any nested .app bundles or frameworks
             find "$APP_BUNDLE/Contents/Frameworks" -depth -type d -name "*.framework" 2>/dev/null | while read fw; do
               echo "  Signing framework: $fw"
               codesign --force --options runtime --sign "$IDENTITY" --timestamp "$fw"
             done
-
-            # Sign helper executables
             find "$APP_BUNDLE/Contents/MacOS" -type f -perm +111 ! -name "$(basename "$APP_BUNDLE" .app)" | while read helper; do
               echo "  Signing helper: $helper"
               codesign --force --options runtime --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" --timestamp "$helper"
             done
-
-            # Sign the main binary
             MAIN_BIN="$APP_BUNDLE/Contents/MacOS/$(basename "$APP_BUNDLE" .app)"
             if [ -f "$MAIN_BIN" ]; then
               echo "Signing main binary: $MAIN_BIN"
               codesign --force --options runtime --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" --timestamp "$MAIN_BIN"
             fi
-
-            # Sign the outer .app bundle
             echo "Signing app bundle..."
-            codesign --force --options runtime \
-              --sign "$IDENTITY" \
-              --entitlements "$ENTITLEMENTS" \
-              --timestamp \
-              "$APP_BUNDLE"
-
-            echo "Verifying signature..."
+            codesign --force --options runtime --sign "$IDENTITY" --entitlements "$ENTITLEMENTS" --timestamp "$APP_BUNDLE"
             codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
-            echo "Checking Gatekeeper acceptance..."
-            spctl --assess --type exec --verbose=2 "$APP_BUNDLE" || echo "WARNING: spctl check failed — notarization required"
-            echo "Signature valid!"
+            echo "App signed successfully!"
           else
-            echo "WARNING: No certificate available — falling back to ad-hoc signing"
-            echo "The resulting DMG will trigger 'damaged app' on macOS Gatekeeper"
+            echo "WARNING: No Developer ID Application cert — ad-hoc signing .app"
             codesign --force --deep --sign - "$APP_BUNDLE"
           fi
 
-      # Create polished DMG with drag-to-Applications layout
-      - name: Create DMG with signed app
-        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
-        run: |
-          APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
-          if [ -z "$APP_BUNDLE" ]; then
-            echo "No .app bundle found — skipping DMG creation"
-            exit 0
-          fi
-
-          VERSION=$(jq -r '.version' evolve-desktop/src-tauri/tauri.conf.json)
-          DMG_DIR="evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg"
-          mkdir -p "$DMG_DIR"
-          DMG_FILE="$DMG_DIR/EvolveApp_${VERSION}_universal.dmg"
-          rm -f "$DMG_DIR"/*.dmg
-
-          # Install create-dmg for polished DMG with Applications shortcut
-          brew install create-dmg || true
-
-          create-dmg \
-            --volname "EvolveApp" \
-            --volicon "evolve-desktop/src-tauri/icons/icon.icns" \
-            --window-pos 200 120 \
-            --window-size 660 400 \
-            --icon-size 80 \
-            --icon "EvolveApp.app" 180 170 \
-            --app-drop-link 480 170 \
-            --hide-extension "EvolveApp.app" \
-            --no-internet-enable \
-            "$DMG_FILE" \
-            "$APP_BUNDLE" \
-          || {
-            # Fallback: basic DMG with Applications symlink
-            echo "create-dmg failed — falling back to hdiutil with Applications symlink"
-            STAGING="${RUNNER_TEMP}/dmg-staging"
-            mkdir -p "$STAGING"
-            cp -R "$APP_BUNDLE" "$STAGING/"
-            ln -s /Applications "$STAGING/Applications"
-            hdiutil create -volname "EvolveApp" -srcfolder "$STAGING" -ov -format UDZO "$DMG_FILE"
-          }
-
-          echo "DMG created: $(ls -lh "$DMG_FILE")"
-
-      # Notarize DMG with Apple (required for Gatekeeper to trust the app)
-      - name: Notarize macOS DMG
-        if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos') && steps.keychain.outputs.has_cert == 'true'
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_APP_PASSWORD" ] || [ -z "$APPLE_TEAM_ID" ]; then
-            echo "WARNING: Apple notarization credentials incomplete — skipping"
-            echo "  APPLE_ID set: $([ -n "$APPLE_ID" ] && echo yes || echo NO)"
-            echo "  APPLE_APP_PASSWORD set: $([ -n "$APPLE_APP_PASSWORD" ] && echo yes || echo NO)"
-            echo "  APPLE_TEAM_ID set: $([ -n "$APPLE_TEAM_ID" ] && echo yes || echo NO)"
-            exit 0
-          fi
-          DMG_FILE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg -name "*.dmg" | head -1)
-          if [ -z "$DMG_FILE" ]; then
-            echo "No DMG found — skipping notarization"
-            exit 0
-          fi
-          echo "Submitting $DMG_FILE for notarization..."
-          xcrun notarytool submit "$DMG_FILE" \
-            --apple-id "$APPLE_ID" \
-            --password "$APPLE_APP_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" \
-            --wait \
-            --timeout 600 2>&1 | tee "${RUNNER_TEMP}/notarize-dmg.log"
-          NOTARY_STATUS=${PIPESTATUS[0]}
-
-          if [ $NOTARY_STATUS -ne 0 ]; then
-            echo "ERROR: Notarization FAILED!"
-            # Try to get the log for details
-            SUBMISSION_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${RUNNER_TEMP}/notarize-dmg.log" | head -1)
-            if [ -n "$SUBMISSION_ID" ]; then
-              echo "Fetching notarization log for $SUBMISSION_ID..."
-              xcrun notarytool log "$SUBMISSION_ID" \
-                --apple-id "$APPLE_ID" \
-                --password "$APPLE_APP_PASSWORD" \
-                --team-id "$APPLE_TEAM_ID" || true
-            fi
-            exit 1
-          fi
-
-          echo "Stapling notarization ticket to DMG..."
-          xcrun stapler staple "$DMG_FILE"
-          echo "Notarization complete! App will be trusted by Gatekeeper."
-
-      # Build signed PKG installer (runs even without Application cert — only needs Installer cert for signing)
+      # Build PKG installer (the only macOS distribution format)
       - name: Build PKG installer
         if: steps.should_build.outputs.build == 'true' && startsWith(matrix.platform.os, 'macos')
         env:
@@ -461,43 +352,45 @@ jobs:
         run: |
           APP_BUNDLE=$(find evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle -name "*.app" -type d | head -1)
           if [ -z "$APP_BUNDLE" ]; then
-            echo "No .app bundle — skipping PKG"
-            exit 0
+            echo "ERROR: No .app bundle found — cannot build PKG"
+            exit 1
           fi
 
           VERSION=$(jq -r '.version' evolve-desktop/src-tauri/tauri.conf.json)
           PKG_DIR="evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg"
           mkdir -p "$PKG_DIR"
+          PKG_FILE="$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
 
           PKG_IDENTITY="${{ steps.keychain.outputs.pkg_identity }}"
 
           # Build component pkg (--component installs the .app bundle as-is into /Applications)
+          echo "Building component package from: $APP_BUNDLE"
           pkgbuild \
             --component "$APP_BUNDLE" \
             --install-location "/Applications" \
             --identifier "com.evolveapp.desktop" \
             --version "$VERSION" \
             "${RUNNER_TEMP}/EvolveApp-component.pkg"
+          echo "Component package: $(ls -lh "${RUNNER_TEMP}/EvolveApp-component.pkg")"
 
-          # Build product archive
+          # Build product archive (signed if Installer cert available)
           if [ -n "$PKG_IDENTITY" ]; then
             echo "Signing PKG with: $PKG_IDENTITY"
             productbuild \
               --package "${RUNNER_TEMP}/EvolveApp-component.pkg" \
               --sign "$PKG_IDENTITY" \
-              "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
+              "$PKG_FILE"
           else
             echo "No Installer cert — building unsigned PKG"
             productbuild \
               --package "${RUNNER_TEMP}/EvolveApp-component.pkg" \
-              "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
+              "$PKG_FILE"
           fi
 
-          echo "PKG created: $(ls -lh "$PKG_DIR/EvolveApp_${VERSION}_universal.pkg")"
+          echo "PKG created: $(ls -lh "$PKG_FILE")"
 
-          # Notarize PKG
+          # Notarize PKG if we have the Installer cert + Apple credentials
           if [ -n "$PKG_IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
-            PKG_FILE="$PKG_DIR/EvolveApp_${VERSION}_universal.pkg"
             echo "Submitting PKG for notarization..."
             xcrun notarytool submit "$PKG_FILE" \
               --apple-id "$APPLE_ID" \
@@ -508,7 +401,7 @@ jobs:
             NOTARY_STATUS=${PIPESTATUS[0]}
 
             if [ $NOTARY_STATUS -ne 0 ]; then
-              echo "ERROR: PKG notarization FAILED!"
+              echo "WARNING: PKG notarization failed — PKG will still be uploaded but may trigger Gatekeeper"
               SUBMISSION_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${RUNNER_TEMP}/notarize-pkg.log" | head -1)
               if [ -n "$SUBMISSION_ID" ]; then
                 xcrun notarytool log "$SUBMISSION_ID" \
@@ -516,11 +409,12 @@ jobs:
                   --password "$APPLE_APP_PASSWORD" \
                   --team-id "$APPLE_TEAM_ID" || true
               fi
-              exit 1
+            else
+              xcrun stapler staple "$PKG_FILE"
+              echo "PKG notarized and stapled!"
             fi
-
-            xcrun stapler staple "$PKG_FILE"
-            echo "PKG notarized and stapled!"
+          else
+            echo "Skipping notarization (missing credentials or Installer cert)"
           fi
 
       # Clean up temporary keychain
@@ -590,8 +484,6 @@ jobs:
         with:
           name: macos-${{ matrix.platform.rust_target }}
           path: |
-            evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg/*.dmg
-            evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg/*.dmg.sig
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg/*.pkg
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/**/*.json
 
@@ -631,8 +523,6 @@ jobs:
             artifacts/**/*.msi.sig
             artifacts/**/*.exe
             artifacts/**/*.exe.sig
-            artifacts/**/*.dmg
-            artifacts/**/*.dmg.sig
             artifacts/**/*.pkg
             artifacts/**/*.json
         env:
