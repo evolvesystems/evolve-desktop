@@ -478,7 +478,7 @@ fn main() {
                 });
             }
 
-            // --- Auto-update check (5s after startup, silent) ---
+            // --- Auto-update check (5s after startup, show modal if available) ---
             {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
@@ -491,11 +491,53 @@ fn main() {
                         match updater.check().await {
                             Ok(Some(update)) => {
                                 let version = update.version.clone();
-                                let js = format!(
+                                let body = update.body.clone().unwrap_or_default();
+
+                                // Update sidebar version label
+                                let sidebar_js = format!(
                                     "document.getElementById('version-label').textContent='v{} \u{2B06}\u{FE0F}';document.getElementById('btn-info').title='Update available: v{}';",
                                     version, version
                                 );
-                                run_js(&handle, "sidebar", &js);
+                                run_js(&handle, "sidebar", &sidebar_js);
+
+                                // Show update modal in content webview
+                                let modal_js = format!(
+                                    r##"
+(function() {{
+  if (document.getElementById('evolve-update-modal')) document.getElementById('evolve-update-modal').remove();
+  var o = document.createElement('div');
+  o.id = 'evolve-update-modal';
+  o.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);font-family:system-ui,-apple-system,sans-serif;';
+  o.innerHTML = '<div style="background:#1e1e2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:32px;min-width:380px;max-width:460px;color:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.5);position:relative;">'
+    + '<div style="font-size:18px;font-weight:600;margin-bottom:6px;">Update Available</div>'
+    + '<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">Version {ver} is ready to install</div>'
+    + '<div id="evolve-update-notes" style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;max-height:120px;overflow-y:auto;white-space:pre-wrap;">{notes}</div>'
+    + '<div id="evolve-update-progress" style="display:none;margin-bottom:16px;">'
+    + '<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;" id="evolve-update-status">Downloading...</div>'
+    + '<div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;"><div id="evolve-update-bar" style="height:100%;background:#3b82f6;border-radius:3px;width:0%;transition:width 0.3s;"></div></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:10px;">'
+    + '<button id="evolve-update-install" style="flex:1;padding:10px;border-radius:10px;border:none;background:#3b82f6;color:#fff;font-size:13px;font-weight:500;cursor:pointer;font-family:system-ui;">Install &amp; Restart</button>'
+    + '<button id="evolve-update-later" style="flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;font-family:system-ui;">Later</button>'
+    + '</div></div>';
+  document.body.appendChild(o);
+  o.onclick = function(e) {{ if (e.target === o) o.remove(); }};
+  document.getElementById('evolve-update-later').onclick = function() {{ o.remove(); }};
+  document.getElementById('evolve-update-install').onclick = function() {{
+    document.getElementById('evolve-update-install').disabled = true;
+    document.getElementById('evolve-update-install').textContent = 'Downloading...';
+    document.getElementById('evolve-update-install').style.opacity = '0.6';
+    document.getElementById('evolve-update-later').style.display = 'none';
+    document.getElementById('evolve-update-progress').style.display = 'block';
+    window.__TAURI_INTERNALS__.invoke('install_update');
+  }};
+}})();
+"##,
+                                    ver = version,
+                                    notes = body.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('"', "&quot;")
+                                );
+                                run_js(&handle, "content", &modal_js);
+
                                 handle.manage(PendingUpdate(std::sync::Mutex::new(Some(update))));
                             }
                             _ => {}
