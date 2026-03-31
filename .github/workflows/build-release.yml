@@ -398,10 +398,15 @@ jobs:
               --team-id "$APPLE_TEAM_ID" \
               --wait \
               --timeout 600 2>&1 | tee "${RUNNER_TEMP}/notarize-pkg.log"
-            NOTARY_STATUS=${PIPESTATUS[0]}
 
-            if [ $NOTARY_STATUS -ne 0 ]; then
-              echo "WARNING: PKG notarization failed — PKG will still be uploaded but may trigger Gatekeeper"
+            # notarytool exits 0 even on "Invalid" — check the output text
+            if grep -q "status: Accepted" "${RUNNER_TEMP}/notarize-pkg.log"; then
+              echo "Notarization accepted! Stapling ticket..."
+              xcrun stapler staple "$PKG_FILE"
+              echo "PKG notarized and stapled!"
+            else
+              echo "WARNING: PKG notarization not accepted — PKG will still be uploaded but may trigger Gatekeeper"
+              echo "This is expected if the .app inside is not signed with a Developer ID Application cert."
               SUBMISSION_ID=$(grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' "${RUNNER_TEMP}/notarize-pkg.log" | head -1)
               if [ -n "$SUBMISSION_ID" ]; then
                 xcrun notarytool log "$SUBMISSION_ID" \
@@ -409,9 +414,6 @@ jobs:
                   --password "$APPLE_APP_PASSWORD" \
                   --team-id "$APPLE_TEAM_ID" || true
               fi
-            else
-              xcrun stapler staple "$PKG_FILE"
-              echo "PKG notarized and stapled!"
             fi
           else
             echo "Skipping notarization (missing credentials or Installer cert)"
