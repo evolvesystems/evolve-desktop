@@ -25,6 +25,15 @@ const SIDEBAR_WIDTH: f64 = 56.0;
 const SIDEBAR_EXPANDED: f64 = 316.0;
 const TABBAR_HEIGHT: f64 = 30.0;
 
+/// Default tabs on first launch (no saved session)
+const DEFAULT_STARTUP_TABS: &[(&str, &str)] = &[
+    ("Email", "/email-manager"),
+    ("Chat", "/chat"),
+    ("Dashboard", "/dashboard"),
+];
+
+const SETTINGS_FILE: &str = "app_settings.json";
+
 // =====================================================================
 //  TAB STATE
 // =====================================================================
@@ -290,12 +299,67 @@ fn load_tab_state(app: &tauri::AppHandle) -> Option<Vec<TabInfo>> {
 }
 
 // =====================================================================
+//  LOCAL SETTINGS
+// =====================================================================
+
+fn save_settings(app: &tauri::AppHandle, settings: &serde_json::Value) {
+    if let Ok(dir) = app.path().app_data_dir() {
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::write(dir.join(SETTINGS_FILE), serde_json::to_string_pretty(settings).unwrap_or_default());
+    }
+}
+
+fn load_settings(app: &tauri::AppHandle) -> serde_json::Value {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .and_then(|dir| fs::read_to_string(dir.join(SETTINGS_FILE)).ok())
+        .and_then(|data| serde_json::from_str(&data).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+// =====================================================================
 //  TAURI COMMANDS
 // =====================================================================
 
 #[tauri::command]
 async fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Get a local setting by key
+#[tauri::command]
+async fn get_setting(app: tauri::AppHandle, key: String) -> Result<serde_json::Value, String> {
+    let settings = load_settings(&app);
+    Ok(settings.get(&key).cloned().unwrap_or(serde_json::Value::Null))
+}
+
+/// Save a local setting
+#[tauri::command]
+async fn set_setting(app: tauri::AppHandle, key: String, value: serde_json::Value) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    if let Some(obj) = settings.as_object_mut() {
+        obj.insert(key, value);
+    }
+    save_settings(&app, &settings);
+    Ok(())
+}
+
+/// Get all local settings
+#[tauri::command]
+async fn get_all_settings(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    Ok(load_settings(&app))
+}
+
+/// Set startup tabs config
+#[tauri::command]
+async fn set_startup_tabs(app: tauri::AppHandle, tabs: Vec<String>) -> Result<(), String> {
+    let mut settings = load_settings(&app);
+    if let Some(obj) = settings.as_object_mut() {
+        obj.insert("startup_tabs".into(), serde_json::json!(tabs));
+    }
+    save_settings(&app, &settings);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1008,6 +1072,10 @@ fn main() {
             update_tab_title,
             get_tabs,
             reorder_tabs,
+            get_setting,
+            set_setting,
+            get_all_settings,
+            set_startup_tabs,
         ])
         .setup(|app| {
             // Manage tab state
@@ -1062,7 +1130,12 @@ fn main() {
 
             let initial_tabs: Vec<(String, String)> = if let Some(ref saved) = saved_tabs {
                 if saved.is_empty() {
-                    vec![("1".into(), format!("{}/dashboard", APP_URL))]
+                    // First launch — open default startup tabs
+                    DEFAULT_STARTUP_TABS
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (_name, path))| ((i + 1).to_string(), format!("{}{}", APP_URL, path)))
+                        .collect()
                 } else {
                     saved
                         .iter()
@@ -1070,7 +1143,12 @@ fn main() {
                         .collect()
                 }
             } else {
-                vec![("1".into(), format!("{}/dashboard", APP_URL))]
+                // No saved state — use defaults
+                DEFAULT_STARTUP_TABS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (_name, path))| ((i + 1).to_string(), format!("{}{}", APP_URL, path)))
+                    .collect()
             };
 
             // Determine which tab was active (or default to first)
