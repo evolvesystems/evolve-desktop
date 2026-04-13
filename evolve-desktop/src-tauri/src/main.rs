@@ -403,29 +403,38 @@ async fn navigate_or_switch_tab(
         .try_state::<AppTabs>()
         .ok_or("Tab state not found")?;
 
-    if !force_new {
-        // Check if any tab already has this URL
+    // Find existing tab or active tab — all inside a sync block, no .await
+    let action = {
         let guard = state.0.lock().map_err(|e| e.to_string())?;
-        let existing = guard.tabs.iter().find(|t| {
-            // Normalize for comparison
-            let tab_path = t.url.replace(APP_URL, "");
-            let req_path = url.replace(APP_URL, "");
-            tab_path == req_path
-                || t.url == url
-                || (req_path.len() > 1 && tab_path.starts_with(&req_path))
-        });
-        if let Some(found) = existing {
-            let tab_id = found.id.clone();
-            drop(guard);
-            return switch_tab(app, tab_id).await;
+
+        if !force_new {
+            let existing = guard.tabs.iter().find(|t| {
+                let tab_path = t.url.replace(APP_URL, "");
+                let req_path = url.replace(APP_URL, "");
+                tab_path == req_path
+                    || t.url == url
+                    || (req_path.len() > 1 && tab_path.starts_with(&req_path))
+            });
+            if let Some(found) = existing {
+                Some(found.id.clone()) // switch to this tab
+            } else {
+                None // navigate active tab
+            }
+        } else {
+            None
         }
+    }; // guard dropped here
+
+    if let Some(tab_id) = action {
+        return switch_tab(app, tab_id).await;
     }
 
     // Navigate active tab
-    let guard = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(active) = guard.tabs.iter().find(|t| t.active) {
-        let label = tab_label(&active.id);
-        drop(guard);
+    let active_label = {
+        let guard = state.0.lock().map_err(|e| e.to_string())?;
+        guard.tabs.iter().find(|t| t.active).map(|t| tab_label(&t.id))
+    };
+    if let Some(label) = active_label {
         nav_tab(&app, &label, &url);
     }
     Ok(())
