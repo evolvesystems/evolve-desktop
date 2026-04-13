@@ -155,3 +155,36 @@ Both instances share `app_data_dir()` for `sidebar_tabs.json` and `browser_tabs.
 ## Version History
 - **2.3.x** — Dual webview (sidebar + content)
 - **2.4.x** — Browser tabs, native notifications, mailto handler, keyboard shortcuts
+
+## CI/CD Build Process
+
+### Trigger a Build
+- **Auto**: Push a version tag (`git tag v2.4.0 && git push --tags`)
+- **Manual**: GitHub Actions → "Build Multi-Platform Release" → Run workflow
+
+### Build Matrix
+| Platform | Target | Output |
+|----------|--------|--------|
+| macOS Intel | x86_64-apple-darwin | `.dmg`, `.app.tar.gz` |
+| macOS ARM | aarch64-apple-darwin | `.dmg`, `.app.tar.gz` |
+| Windows | x86_64-pc-windows-msvc | `.msi`, `.msi.zip` |
+| Linux | x86_64-unknown-linux-gnu | `.AppImage`, `.deb` |
+
+### Version Bumping
+Update version in TWO files:
+```bash
+# src-tauri/tauri.conf.json
+"version": "2.4.0"
+
+# src-tauri/Cargo.toml
+version = "2.4.0"
+```
+
+Then tag and push:
+```bash
+git tag v2.4.0
+git push origin master --tags
+```
+
+### Auto-Update
+Built apps check `https://evolvepreneuriq.app/api/v1/desktop/updates/{target}/{version}` on startup. If a newer version exists, shows install modal. No need to reinstall — updates apply in-place.
