@@ -220,9 +220,20 @@ function renderTabs() {
             btn.appendChild(badge);
         }
 
-        btn.onclick = function() {
+        btn.onclick = function(e) {
             showLoading();
-            invoke('navigate_content', { url: url });
+            // Ctrl+click or middle-click = force new tab
+            var forceNew = e.ctrlKey || e.metaKey;
+            invoke('navigate_or_switch_tab', { url: url, forceNew: forceNew });
+        };
+
+        btn.onmousedown = function(e) {
+            // Middle-click = open in new tab
+            if (e.button === 1) {
+                e.preventDefault();
+                showLoading();
+                invoke('create_tab', { url: url });
+            }
         };
 
         container.appendChild(btn);
@@ -458,7 +469,7 @@ function updateBadge(tabId, count) {
 // Button handlers
 document.getElementById('logo-btn').onclick = function() {
     showLoading();
-    invoke('navigate_content', { url: APP + '/dashboard' });
+    invoke('navigate_or_switch_tab', { url: APP + '/dashboard', forceNew: false });
 };
 document.getElementById('btn-back').onclick = function() {
     invoke('content_go_back');

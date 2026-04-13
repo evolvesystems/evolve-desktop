@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html style="height:100%;margin:0;padding:0">
+<head>
+<meta charset="UTF-8">
+<title>Tab Bar</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; overflow:hidden; font-family:system-ui,-apple-system,sans-serif; background:#1e1e2e; color:#fff; user-select:none; }
+body { display:flex; align-items:center; }
+
+#tab-strip {
+    display:flex;
+    flex:1;
+    height:30px;
+    align-items:flex-end;
+    overflow-x:auto;
+    overflow-y:hidden;
+    padding-left:4px;
+    gap:1px;
+}
+#tab-strip::-webkit-scrollbar { height:0; }
+
+.tab {
+    display:flex;
+    align-items:center;
+    height:26px;
+    min-width:60px;
+    max-width:200px;
+    padding:0 6px 0 10px;
+    border-radius:6px 6px 0 0;
+    background:rgba(255,255,255,0.04);
+    color:rgba(255,255,255,0.5);
+    font-size:11px;
+    cursor:pointer;
+    flex-shrink:0;
+    transition:background 0.12s, color 0.12s;
+    position:relative;
+    gap:4px;
+}
+.tab:hover { background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.75); }
+.tab.active { background:rgba(255,255,255,0.12); color:#fff; }
+.tab.dragging { opacity:0.5; }
+.tab.drag-over { border-left:2px solid #3b82f6; }
+
+.tab-title {
+    flex:1;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    line-height:26px;
+    pointer-events:none;
+}
+
+.tab-close {
+    width:16px;
+    height:16px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:4px;
+    border:none;
+    background:none;
+    color:rgba(255,255,255,0.3);
+    font-size:12px;
+    cursor:pointer;
+    flex-shrink:0;
+    transition:all 0.1s;
+    line-height:1;
+    padding:0;
+}
+.tab-close:hover { background:rgba(255,255,255,0.15); color:#fff; }
+.tab-close.hidden { display:none; }
+
+#btn-new-tab {
+    width:26px;
+    height:26px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:6px;
+    border:none;
+    background:none;
+    color:rgba(255,255,255,0.3);
+    font-size:16px;
+    cursor:pointer;
+    flex-shrink:0;
+    margin:0 4px;
+    align-self:flex-end;
+    transition:all 0.12s;
+}
+#btn-new-tab:hover { background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.7); }
+
+/* Context menu */
+#ctx-menu {
+    display:none;
+    position:fixed;
+    z-index:1000;
+    background:#2a2a3e;
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:6px;
+    padding:4px 0;
+    min-width:160px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.5);
+    font-size:12px;
+}
+#ctx-menu.open { display:block; }
+.ctx-item {
+    display:block;
+    width:100%;
+    padding:6px 12px;
+    border:none;
+    background:none;
+    color:rgba(255,255,255,0.7);
+    text-align:left;
+    cursor:pointer;
+    font-family:system-ui;
+    font-size:12px;
+}
+.ctx-item:hover { background:rgba(255,255,255,0.08); color:#fff; }
+.ctx-sep { height:1px; background:rgba(255,255,255,0.08); margin:4px 0; }
+</style>
+</head>
+<body>
+
+<div id="tab-strip"></div>
+<button id="btn-new-tab" title="New Tab (Ctrl+T)">+</button>
+
+<div id="ctx-menu">
+    <button class="ctx-item" id="ctx-close">Close</button>
+    <button class="ctx-item" id="ctx-close-others">Close Others</button>
+    <div class="ctx-sep"></div>
+    <button class="ctx-item" id="ctx-duplicate">Duplicate</button>
+</div>
+
+<script>
+// =====================================================================
+//  EvolveApp Tab Bar
+//  Rendered as a local webview. Communicates with Rust via Tauri IPC.
+// =====================================================================
+
+var invoke = window.__TAURI_INTERNALS__ ? window.__TAURI_INTERNALS__.invoke : function() { return Promise.resolve(); };
+var tabs = [];         // [{id, title, url, active}]
+var ctxTabId = null;   // Tab ID for context menu
+var dragTabId = null;  // Tab ID being dragged
+
+// =====================================================================
+//  RENDERING
+// =====================================================================
+
+function renderTabs() {
+    var strip = document.getElementById('tab-strip');
+    strip.innerHTML = '';
+    var singleTab = tabs.length <= 1;
+
+    tabs.forEach(function(tab) {
+        var el = document.createElement('div');
+        el.className = 'tab' + (tab.active ? ' active' : '');
+        el.dataset.tabId = tab.id;
+        el.draggable = true;
+
+        var title = document.createElement('span');
+        title.className = 'tab-title';
+        title.textContent = tab.title || 'New Tab';
+        el.appendChild(title);
+
+        var close = document.createElement('button');
+        close.className = 'tab-close' + (singleTab ? ' hidden' : '');
+        close.innerHTML = '&times;';
+        close.title = 'Close tab';
+        close.onclick = function(e) {
+            e.stopPropagation();
+            closeTab(tab.id);
+        };
+        el.appendChild(close);
+
+        // Click to switch
+        el.onclick = function() {
+            if (!tab.active) switchTab(tab.id);
+        };
+
+        // Middle-click to close
+        el.onmousedown = function(e) {
+            if (e.button === 1 && !singleTab) {
+                e.preventDefault();
+                closeTab(tab.id);
+            }
+        };
+
+        // Right-click context menu
+        el.oncontextmenu = function(e) {
+            e.preventDefault();
+            showContextMenu(e.clientX, e.clientY, tab.id);
+        };
+
+        // Drag events
+        el.ondragstart = function(e) {
+            dragTabId = tab.id;
+            el.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        };
+        el.ondragend = function() {
+            el.classList.remove('dragging');
+            dragTabId = null;
+            clearDragOver();
+        };
+        el.ondragover = function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            clearDragOver();
+            if (dragTabId && dragTabId !== tab.id) {
+                el.classList.add('drag-over');
+            }
+        };
+        el.ondragleave = function() {
+            el.classList.remove('drag-over');
+        };
+        el.ondrop = function(e) {
+            e.preventDefault();
+            clearDragOver();
+            if (dragTabId && dragTabId !== tab.id) {
+                reorderTabs(dragTabId, tab.id);
+            }
+        };
+
+        strip.appendChild(el);
+    });
+}
+
+function clearDragOver() {
+    document.querySelectorAll('.tab.drag-over').forEach(function(el) {
+        el.classList.remove('drag-over');
+    });
+}
+
+// =====================================================================
+//  TAB OPERATIONS
+// =====================================================================
+
+function createTab(url) {
+    invoke('create_tab', { url: url || '' });
+}
+
+function closeTab(tabId) {
+    invoke('close_tab', { tabId: tabId });
+}
+
+function switchTab(tabId) {
+    invoke('switch_tab', { tabId: tabId });
+}
+
+function reorderTabs(fromId, toId) {
+    var fromIdx = tabs.findIndex(function(t) { return t.id === fromId; });
+    var toIdx = tabs.findIndex(function(t) { return t.id === toId; });
+    if (fromIdx === -1 || toIdx === -1) return;
+    var item = tabs.splice(fromIdx, 1)[0];
+    tabs.splice(toIdx, 0, item);
+    renderTabs();
+    invoke('reorder_tabs', { tabIds: tabs.map(function(t) { return t.id; }) });
+}
+
+// =====================================================================
+//  CONTEXT MENU
+// =====================================================================
+
+function showContextMenu(x, y, tabId) {
+    ctxTabId = tabId;
+    var menu = document.getElementById('ctx-menu');
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.classList.add('open');
+}
+
+function hideContextMenu() {
+    document.getElementById('ctx-menu').classList.remove('open');
+    ctxTabId = null;
+}
+
+document.addEventListener('click', function() { hideContextMenu(); });
+
+document.getElementById('ctx-close').onclick = function() {
+    if (ctxTabId && tabs.length > 1) closeTab(ctxTabId);
+    hideContextMenu();
+};
+
+document.getElementById('ctx-close-others').onclick = function() {
+    if (ctxTabId) {
+        var others = tabs.filter(function(t) { return t.id !== ctxTabId; });
+        others.forEach(function(t) { closeTab(t.id); });
+    }
+    hideContextMenu();
+};
+
+document.getElementById('ctx-duplicate').onclick = function() {
+    if (ctxTabId) {
+        var tab = tabs.find(function(t) { return t.id === ctxTabId; });
+        if (tab) createTab(tab.url);
+    }
+    hideContextMenu();
+};
+
+// =====================================================================
+//  NEW TAB BUTTON
+// =====================================================================
+
+document.getElementById('btn-new-tab').onclick = function() {
+    createTab('');
+};
+
+// =====================================================================
+//  IPC EVENT LISTENERS
+// =====================================================================
+
+if (window.__TAURI_INTERNALS__) {
+    // Listen for tab state updates from Rust
+    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
+        event: 'tabs-updated',
+        handler: function(event) {
+            try {
+                var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+                if (Array.isArray(data)) {
+                    tabs = data;
+                    renderTabs();
+                }
+            } catch(e) {
+                console.warn('[tabbar] tabs-updated parse error:', e);
+            }
+        }
+    }).catch(function(e) { console.warn('[tabbar] listen error:', e); });
+}
+
+// =====================================================================
+//  KEYBOARD SHORTCUTS (received from Rust via event)
+// =====================================================================
+
+if (window.__TAURI_INTERNALS__) {
+    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
+        event: 'tab-shortcut',
+        handler: function(event) {
+            var action = event.payload;
+            if (action === 'new') createTab('');
+            else if (action === 'close') {
+                var active = tabs.find(function(t) { return t.active; });
+                if (active && tabs.length > 1) closeTab(active.id);
+            }
+            else if (action === 'next') {
+                var idx = tabs.findIndex(function(t) { return t.active; });
+                if (idx !== -1 && tabs.length > 1) switchTab(tabs[(idx + 1) % tabs.length].id);
+            }
+            else if (action === 'prev') {
+                var idx2 = tabs.findIndex(function(t) { return t.active; });
+                if (idx2 !== -1 && tabs.length > 1) switchTab(tabs[(idx2 - 1 + tabs.length) % tabs.length].id);
+            }
+            else if (action.startsWith('switch-')) {
+                var n = parseInt(action.split('-')[1]) - 1;
+                if (n === 8) n = tabs.length - 1; // Ctrl+9 = last tab
+                if (n >= 0 && n < tabs.length) switchTab(tabs[n].id);
+            }
+        }
+    }).catch(function() {});
+}
+
+// Initial render (empty until Rust sends tab state)
+renderTabs();
+</script>
+</body>
+</html>

@@ -54,7 +54,8 @@
     "deep-link": {
       "desktop": {
         "schemes": [
-          "evolveapp"
+          "evolveapp",
+          "mailto"
         ]
       }
     },
