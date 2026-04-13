@@ -224,7 +224,7 @@ function renderTabs() {
             showLoading();
             // Ctrl+click or middle-click = force new tab
             var forceNew = e.ctrlKey || e.metaKey;
-            invoke('navigate_or_switch_tab', { url: url, forceNew: forceNew });
+            invoke('navigate_content', { url: url });
         };
 
         btn.onmousedown = function(e) {
@@ -469,7 +469,7 @@ function updateBadge(tabId, count) {
 // Button handlers
 document.getElementById('logo-btn').onclick = function() {
     showLoading();
-    invoke('navigate_or_switch_tab', { url: APP + '/dashboard', forceNew: false });
+    invoke('navigate_content', { url: APP + '/dashboard' });
 };
 document.getElementById('btn-back').onclick = function() {
     invoke('content_go_back');
