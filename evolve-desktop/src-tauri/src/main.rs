@@ -558,6 +558,7 @@ fn main() {
                 &MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?,
                 &MenuItem::with_id(app, "books", "Books", true, None::<&str>)?,
                 &MenuItem::with_id(app, "sep2", "---", false, None::<&str>)?,
+                &MenuItem::with_id(app, "clear_session", "Clear Session & Login", true, None::<&str>)?,
                 &MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?,
             ])?;
 
@@ -571,6 +572,7 @@ fn main() {
                         "va" => "/workspace/va", "dashboard" => "/dashboard",
                         "crm" => "/crm-marketing/contacts", "calendar" => "/scheduling",
                         "books" => "/books",
+                        "clear_session" => "/tenant/reset-session",
                         "quit" => { app.exit(0); return; }
                         _ => return,
                     };
