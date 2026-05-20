@@ -28,6 +28,7 @@
     "core:app:allow-version",
     "shell:default",
     "http:default",
-    "notification:default"
+    "notification:default",
+    "dialog:default"
   ]
 }
