@@ -4,6 +4,12 @@
   "description": "Default capabilities for EvolveApp dual-webview architecture",
   "windows": ["main"],
   "webviews": ["sidebar", "content", "main"],
+  "remote": {
+    "urls": [
+      "https://evolvepreneuriq.app/*",
+      "https://*.evolvepreneuriq.app/*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-center",
