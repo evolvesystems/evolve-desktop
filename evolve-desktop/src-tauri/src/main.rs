@@ -491,31 +491,59 @@ fn main() {
                 });
             }
 
-            // --- Auto-update check (5s after startup, show modal if available) ---
+            // --- Auto-update check ---
+            // First check 5s after startup, then every 6 hours while the app
+            // runs. Without the periodic re-check, users who never quit the
+            // app (= most users) would never see new versions, because Tauri's
+            // updater.check() only runs when explicitly called. v2.4.7 made
+            // that one-shot-at-startup pattern visible (john@evolvepreneur
+            // ran v2.4.6 for weeks across multiple releases without seeing
+            // a single modal — 2026-05-21).
+            //
+            // Per-version dedup: if we've already shown the modal for version
+            // X this session, don't re-spam every 6 hours. Only re-pop when
+            // the available version changes (new release) or the user has
+            // explicitly dismissed-and-now-time-passed-and-newer-release.
             {
                 let handle = app.handle().clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    tauri::async_runtime::block_on(async {
-                        let updater = match handle.updater() {
-                            Ok(u) => u,
-                            Err(_) => return,
+                    let mut last_shown_version: Option<String> = None;
+                    let mut first_check = true;
+                    loop {
+                        let delay = if first_check {
+                            std::time::Duration::from_secs(5)
+                        } else {
+                            std::time::Duration::from_secs(6 * 60 * 60) // 6 hours
                         };
-                        match updater.check().await {
-                            Ok(Some(update)) => {
-                                let version = update.version.clone();
-                                let body = update.body.clone().unwrap_or_default();
+                        first_check = false;
+                        std::thread::sleep(delay);
 
-                                // Update sidebar version label
-                                let sidebar_js = format!(
-                                    "document.getElementById('version-label').textContent='v{} \u{2B06}\u{FE0F}';document.getElementById('btn-info').title='Update available: v{}';",
-                                    version, version
-                                );
-                                run_js(&handle, "sidebar", &sidebar_js);
+                        let handle_inner = handle.clone();
+                        let already_shown = last_shown_version.clone();
+                        let result: Option<String> = tauri::async_runtime::block_on(async move {
+                            let updater = match handle_inner.updater() {
+                                Ok(u) => u,
+                                Err(_) => return None,
+                            };
+                            match updater.check().await {
+                                Ok(Some(update)) => {
+                                    let version = update.version.clone();
+                                    // Skip re-showing the same version's modal.
+                                    if already_shown.as_deref() == Some(version.as_str()) {
+                                        return None;
+                                    }
+                                    let body = update.body.clone().unwrap_or_default();
 
-                                // Show update modal in content webview
-                                let modal_js = format!(
-                                    r##"
+                                    // Update sidebar version label
+                                    let sidebar_js = format!(
+                                        "document.getElementById('version-label').textContent='v{} \u{2B06}\u{FE0F}';document.getElementById('btn-info').title='Update available: v{}';",
+                                        version, version
+                                    );
+                                    run_js(&handle_inner, "sidebar", &sidebar_js);
+
+                                    // Show update modal in content webview
+                                    let modal_js = format!(
+                                        r##"
 (function() {{
   if (document.getElementById('evolve-update-modal')) document.getElementById('evolve-update-modal').remove();
   var o = document.createElement('div');
@@ -546,16 +574,21 @@ fn main() {
   }};
 }})();
 "##,
-                                    ver = version,
-                                    notes = body.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('"', "&quot;")
-                                );
-                                run_js(&handle, "content", &modal_js);
+                                        ver = version,
+                                        notes = body.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('"', "&quot;")
+                                    );
+                                    run_js(&handle_inner, "content", &modal_js);
 
-                                handle.manage(PendingUpdate(std::sync::Mutex::new(Some(update))));
+                                    handle_inner.manage(PendingUpdate(std::sync::Mutex::new(Some(update))));
+                                    Some(version)
+                                }
+                                _ => None,
                             }
-                            _ => {}
+                        });
+                        if let Some(v) = result {
+                            last_shown_version = Some(v);
                         }
-                    });
+                    }
                 });
             }
 
