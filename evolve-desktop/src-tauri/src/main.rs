@@ -534,9 +534,15 @@ fn main() {
                                     }
                                     let body = update.body.clone().unwrap_or_default();
 
-                                    // Update sidebar version label
+                                    // Update sidebar version label. Renders the upgrade marker
+                                    // as an inline SVG arrow instead of a unicode emoji because
+                                    // the emoji renders inconsistently across platforms — Mac
+                                    // shows a colour glyph, Windows often shows a black-and-white
+                                    // glyph or tofu box depending on the installed emoji font.
+                                    // SVG is identical on every OS. Switched from textContent to
+                                    // innerHTML because we now inject markup.
                                     let sidebar_js = format!(
-                                        "document.getElementById('version-label').textContent='v{} \u{2B06}\u{FE0F}';document.getElementById('btn-info').title='Update available: v{}';",
+                                        "document.getElementById('version-label').innerHTML='v{} <svg style=\"display:inline-block;vertical-align:middle;width:11px;height:11px;margin-left:3px;color:#ef4444\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m4.5 15.75 7.5-7.5 7.5 7.5\"/></svg>';document.getElementById('btn-info').title='Update available: v{}';",
                                         version, version
                                     );
                                     run_js(&handle_inner, "sidebar", &sidebar_js);
