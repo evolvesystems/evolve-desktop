@@ -74,6 +74,9 @@ body::-webkit-scrollbar { width:0; }
 #confirm-box .btn-ok { flex:1; padding:6px; border-radius:6px; border:none; background:#ef4444; color:#fff; font-size:11px; cursor:pointer; font-family:system-ui; }
 #confirm-box .btn-cancel { flex:1; padding:6px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:none; color:rgba(255,255,255,0.6); font-size:11px; cursor:pointer; font-family:system-ui; }
 
+/* Drag-and-drop reorder */
+.config-row.drag-over { outline: 2px solid #3b82f6; outline-offset: -2px; }
+
 /* Save indicator */
 #save-indicator { position:fixed; top:8px; left:60px; z-index:30; padding:4px 12px; border-radius:6px; font-size:11px; opacity:0; transition:opacity 0.3s; pointer-events:none; }
 
@@ -177,6 +180,7 @@ var DEFAULT_TABS = [
 var tabs = DEFAULT_TABS;
 var currentUrl = '';
 var configOpen = false;
+var dragSrcIdx = null;
 
 // Loading indicator
 function showLoading() {
@@ -248,6 +252,36 @@ function renderConfigList() {
     tabs.forEach(function(tab, idx) {
         var row = document.createElement('div');
         row.className = 'config-row' + (tab.enabled ? '' : ' disabled');
+        row.setAttribute('draggable', 'true');
+
+        // Drag-and-drop reorder handlers
+        row.addEventListener('dragstart', function(e) {
+            dragSrcIdx = idx;
+            e.dataTransfer.effectAllowed = 'move';
+            // Delay opacity so the drag ghost image captures the full row first
+            setTimeout(function() { row.style.opacity = '0.4'; }, 0);
+        });
+        row.addEventListener('dragend', function() {
+            row.style.opacity = '';
+            list.querySelectorAll('.config-row').forEach(function(r) { r.classList.remove('drag-over'); });
+        });
+        row.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            list.querySelectorAll('.config-row').forEach(function(r) { r.classList.remove('drag-over'); });
+            row.classList.add('drag-over');
+        });
+        row.addEventListener('drop', function(e) {
+            e.preventDefault();
+            row.classList.remove('drag-over');
+            if (dragSrcIdx === null || dragSrcIdx === idx) return;
+            var moved = tabs.splice(dragSrcIdx, 1)[0];
+            tabs.splice(idx, 0, moved);
+            dragSrcIdx = null;
+            renderConfigList();
+            renderTabs();
+            saveTabs();
+        });
 
         // Grip
         var grip = document.createElement('span');
