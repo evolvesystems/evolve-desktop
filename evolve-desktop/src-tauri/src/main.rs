@@ -78,6 +78,13 @@ async fn load_cached_tabs(app: tauri::AppHandle) -> Result<String, String> {
 
 #[tauri::command]
 async fn navigate_content(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    // Reject non-http(s) schemes so XSS in the content webview can't call this
+    // command to load file:// paths or trigger arbitrary protocol handlers.
+    // All legitimate callers (sidebar tab clicks, logo, logout) already pass
+    // absolute https:// URLs. This mirrors the same guard in open_external_url.
+    if !url.starts_with("https://") && !url.starts_with("http://") {
+        return Err("navigate_content: only http/https URLs are permitted".to_string());
+    }
     nav_content(&app, &url);
     Ok(())
 }
