@@ -28,6 +28,16 @@ fn run_js(app: &tauri::AppHandle, label: &str, js: &str) {
     }
 }
 
+// Emit an event directly to the standalone "sidebar" webview.
+// emit_to("sidebar") converts to EventTarget::WebviewWindow which does NOT
+// match a Webview added via window.add_child() — events are silently dropped.
+// Webview::emit() targets the webview directly by its registered label.
+fn emit_sidebar<S: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str, payload: S) {
+    if let Some(wv) = app.get_webview("sidebar") {
+        let _ = wv.emit(event, payload);
+    }
+}
+
 fn nav_content(app: &tauri::AppHandle, url: &str) {
     run_js(app, "content", &format!("window.location.href='{}'", url.replace('\'', "\\'")));
 }
@@ -287,14 +297,14 @@ async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), Str
 /// Called from content webview JS to relay tabs data to sidebar
 #[tauri::command]
 async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
-    let _ = app.emit_to("sidebar", "tabs-loaded", &tabs_json);
+    emit_sidebar(&app, "tabs-loaded", &tabs_json);
     Ok(())
 }
 
 /// Called from content webview JS to relay badge data to sidebar
 #[tauri::command]
 async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> Result<(), String> {
-    let _ = app.emit_to("sidebar", "badge-update", &badges_json);
+    emit_sidebar(&app, "badge-update", &badges_json);
     Ok(())
 }
 
@@ -452,12 +462,12 @@ fn main() {
                 match payload.event() {
                     PageLoadEvent::Started => {
                         println!("[page-load] Started: {}", url_str);
-                        let _ = app_handle.emit_to("sidebar", "content-loading", true);
+                        emit_sidebar(&app_handle, "content-loading", true);
                         return;
                     }
                     PageLoadEvent::Finished => {
                         println!("[page-load] Finished: {}", url_str);
-                        let _ = app_handle.emit_to("sidebar", "content-loaded", true);
+                        emit_sidebar(&app_handle, "content-loaded", true);
                     }
                     _ => return,
                 }
@@ -469,7 +479,7 @@ fn main() {
 
                 // Emit URL to sidebar for active tab highlighting
                 if let Ok(url) = webview.url() {
-                    let _ = app_handle.emit_to("sidebar", "content-navigated", url.to_string());
+                    emit_sidebar(&app_handle, "content-navigated", url.to_string());
                 }
 
                 // Tiny injection: fetch tabs + badges via Tauri commands (not plugin:event|emit)
