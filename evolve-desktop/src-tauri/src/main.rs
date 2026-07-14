@@ -151,10 +151,23 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
   document.getElementById('evolve-info-close').onmouseenter = function() {{ this.style.background='rgba(255,255,255,0.15)'; this.style.color='#fff'; }};
   document.getElementById('evolve-info-close').onmouseleave = function() {{ this.style.background='rgba(255,255,255,0.08)'; this.style.color='rgba(255,255,255,0.6)'; }};
   document.getElementById('evolve-info-check-update').onclick = function() {{
-    this.textContent = 'Checking...';
-    this.disabled = true;
-    overlay.remove();
-    window.__TAURI_INTERNALS__.invoke('check_for_updates');
+    var btn = this;
+    btn.textContent = 'Checking...';
+    btn.disabled = true;
+    window.__TAURI_INTERNALS__.invoke('check_for_updates').then(function() {{
+      overlay.remove();
+    }}).catch(function() {{
+      btn.disabled = false;
+      btn.textContent = 'Check for Updates';
+      var errEl = document.getElementById('evolve-info-check-err');
+      if (!errEl) {{
+        errEl = document.createElement('div');
+        errEl.id = 'evolve-info-check-err';
+        errEl.style.cssText = 'font-size:12px;color:#ef4444;text-align:center;margin-top:8px;';
+        btn.parentNode.appendChild(errEl);
+      }}
+      errEl.textContent = 'Update check failed — check your connection and try again';
+    }});
   }};
   fetch('https://evolvepreneuriq.app/api/v1/desktop/version').then(function(r){{ return r.json(); }}).then(function(d){{
     var el = document.getElementById('evolve-info-latest');
