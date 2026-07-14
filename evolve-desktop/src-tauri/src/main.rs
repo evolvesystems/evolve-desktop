@@ -687,6 +687,33 @@ fn main() {
                 });
             }
 
+            // --- Periodic badge polling ---
+            // Badges update on every page navigation via the on_page_load injection,
+            // but if the user stays on one page the counts go stale. A setInterval
+            // injected into the content webview resets on every full navigation (new
+            // window context), so multiple intervals stack up. Running the poll from
+            // Rust gives a single stable timer regardless of navigation history.
+            {
+                let badge_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                        run_js(&badge_handle, "content", r#"
+(async function() {
+    if (!window.__TAURI_INTERNALS__) return;
+    try {
+        var r = await fetch('/api/v1/desktop/check-notifications', {credentials:'include'});
+        if (r.ok) {
+            var d = await r.json();
+            window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d)});
+        }
+    } catch(e) {}
+})();
+"#);
+                    }
+                });
+            }
+
             // macOS: install a native Edit menu so WKWebView routes Cmd+C/V/X/Z
             // to the content webview. Without this entry in the app's native menu
             // bar, macOS intercepts those keystrokes at the OS level and they
