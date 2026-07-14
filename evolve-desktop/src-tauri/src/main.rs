@@ -554,54 +554,68 @@ fn main() {
                     emit_sidebar(&app_handle, "content-navigated", url.to_string());
                 }
 
-                // Tiny injection: fetch tabs + badges via Tauri commands (not plugin:event|emit)
-                let _ = webview.eval(r#"
-                    (async function() {
-                        if (!window.__TAURI_INTERNALS__) return;
-                        try {
-                            var r = await fetch('/api/v1/desktop/sidebar/tabs', {credentials:'include'});
-                            if (r.ok) {
-                                var d = await r.json();
-                                if (d.tabs) window.__TAURI_INTERNALS__.invoke('relay_tabs_to_sidebar', {tabsJson: JSON.stringify(d.tabs)});
-                            }
-                        } catch(e) {}
-                        try {
-                            var r2 = await fetch('/api/v1/desktop/check-notifications', {credentials:'include'});
-                            if (r2.ok) {
-                                var d2 = await r2.json();
-                                window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
-                            }
-                        } catch(e) {}
-                    })();
-                "#);
+                // Determine if this is an app page. External custom-tab pages must
+                // not receive the tabs/badge injection (wrong relative URL origin)
+                // and must not receive the external-link interceptor (it would catch
+                // all clicks on the external site and open them in the system browser,
+                // making the site completely non-navigable inside the content webview).
+                let is_app_page = url_str.starts_with("https://evolvepreneuriq.app")
+                    || url_str.starts_with("http://evolvepreneuriq.app");
 
-                // External-link interceptor: open target="_blank" and cross-origin
-                // links in the system browser. Without this, WKWebView/WebView2
-                // silently drops every target="_blank" click — the link just does nothing.
-                let _ = webview.eval(r#"
-                    (function() {
-                        if (window.__evolve_ext_links_hooked__) return;
-                        window.__evolve_ext_links_hooked__ = true;
-                        document.addEventListener('click', function(e) {
-                            var el = e.target;
-                            while (el && el.tagName !== 'A') el = el.parentElement;
-                            if (!el || !el.href) return;
-                            var href = el.href;
+                if is_app_page {
+                    // Tiny injection: fetch tabs + badges via Tauri commands (not plugin:event|emit)
+                    let _ = webview.eval(r#"
+                        (async function() {
+                            if (!window.__TAURI_INTERNALS__) return;
                             try {
-                                var u = new URL(href);
-                                var isInternal = u.hostname === 'evolvepreneuriq.app'
-                                    || u.hostname.endsWith('.evolvepreneuriq.app');
-                                var isBlank = el.target === '_blank';
-                                if (!isInternal || isBlank) {
-                                    if (u.protocol === 'https:' || u.protocol === 'http:' || u.protocol === 'mailto:') {
-                                        e.preventDefault();
-                                        window.__TAURI_INTERNALS__.invoke('open_external_url', {url: href});
-                                    }
+                                var r = await fetch('/api/v1/desktop/sidebar/tabs', {credentials:'include'});
+                                if (r.ok) {
+                                    var d = await r.json();
+                                    if (d.tabs) window.__TAURI_INTERNALS__.invoke('relay_tabs_to_sidebar', {tabsJson: JSON.stringify(d.tabs)});
                                 }
-                            } catch(_) {}
-                        }, true);
-                    })();
-                "#);
+                            } catch(e) {}
+                            try {
+                                var r2 = await fetch('/api/v1/desktop/check-notifications', {credentials:'include'});
+                                if (r2.ok) {
+                                    var d2 = await r2.json();
+                                    window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
+                                }
+                            } catch(e) {}
+                        })();
+                    "#);
+
+                    // External-link interceptor: open target="_blank" and cross-origin
+                    // links in the system browser. Without this, WKWebView/WebView2
+                    // silently drops every target="_blank" click — the link just does nothing.
+                    // Injected ONLY on app pages: on a third-party custom-tab page the
+                    // interceptor would classify all of that site's own links as "external"
+                    // (they're not evolvepreneuriq.app) and open every click in the system
+                    // browser, making the external site completely non-navigable.
+                    let _ = webview.eval(r#"
+                        (function() {
+                            if (window.__evolve_ext_links_hooked__) return;
+                            window.__evolve_ext_links_hooked__ = true;
+                            document.addEventListener('click', function(e) {
+                                var el = e.target;
+                                while (el && el.tagName !== 'A') el = el.parentElement;
+                                if (!el || !el.href) return;
+                                var href = el.href;
+                                try {
+                                    var u = new URL(href);
+                                    var isInternal = u.hostname === 'evolvepreneuriq.app'
+                                        || u.hostname.endsWith('.evolvepreneuriq.app');
+                                    var isBlank = el.target === '_blank';
+                                    if (!isInternal || isBlank) {
+                                        if (u.protocol === 'https:' || u.protocol === 'http:' || u.protocol === 'mailto:') {
+                                            e.preventDefault();
+                                            window.__TAURI_INTERNALS__.invoke('open_external_url', {url: href});
+                                        }
+                                    }
+                                } catch(_) {}
+                            }, true);
+                        })();
+                    "#);
+                }
             });
 
             let _content = window.add_child(
