@@ -236,11 +236,15 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
     document.getElementById('evolve-update-progress').style.display = 'block';
     o.onclick = null;
     window.__TAURI_INTERNALS__.invoke('install_update').catch(function() {{
-      document.getElementById('evolve-update-install').disabled = false;
-      document.getElementById('evolve-update-install').textContent = 'Retry Install';
-      document.getElementById('evolve-update-install').style.opacity = '';
-      document.getElementById('evolve-update-later').style.display = '';
       document.getElementById('evolve-update-status').textContent = 'Download failed — check your connection and try again';
+      document.getElementById('evolve-update-install').textContent = 'Try Again';
+      document.getElementById('evolve-update-install').style.opacity = '';
+      document.getElementById('evolve-update-install').disabled = false;
+      document.getElementById('evolve-update-install').onclick = function() {{
+        o.remove();
+        window.__TAURI_INTERNALS__.invoke('check_for_updates');
+      }};
+      document.getElementById('evolve-update-later').style.display = '';
       o.onclick = function(e) {{ if (e.target === o) o.remove(); }};
     }});
   }};
@@ -754,11 +758,15 @@ fn main() {
     document.getElementById('evolve-update-progress').style.display = 'block';
     o.onclick = null;
     window.__TAURI_INTERNALS__.invoke('install_update').catch(function() {{
-      document.getElementById('evolve-update-install').disabled = false;
-      document.getElementById('evolve-update-install').textContent = 'Retry Install';
-      document.getElementById('evolve-update-install').style.opacity = '';
-      document.getElementById('evolve-update-later').style.display = '';
       document.getElementById('evolve-update-status').textContent = 'Download failed — check your connection and try again';
+      document.getElementById('evolve-update-install').textContent = 'Try Again';
+      document.getElementById('evolve-update-install').style.opacity = '';
+      document.getElementById('evolve-update-install').disabled = false;
+      document.getElementById('evolve-update-install').onclick = function() {{
+        o.remove();
+        window.__TAURI_INTERNALS__.invoke('check_for_updates');
+      }};
+      document.getElementById('evolve-update-later').style.display = '';
       o.onclick = function(e) {{ if (e.target === o) o.remove(); }};
     }});
   }};
