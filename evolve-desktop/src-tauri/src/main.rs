@@ -375,6 +375,18 @@ fn main() {
                 .visible(false)
                 .build()?;
 
+            // Fallback: show the window after 5 s even if the remote page never
+            // fires PageLoadEvent::Finished (e.g. offline, DNS failure, slow net).
+            // Without this the app appears to launch (dock bounce) but no window
+            // ever appears — the user is left with nothing to click.
+            {
+                let win_for_timeout = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    let _ = win_for_timeout.show();
+                });
+            }
+
             // Get logical size (physical / scale factor)
             let scale = window.scale_factor().unwrap_or(1.0);
             let phys = window.inner_size()?;
@@ -628,12 +640,12 @@ fn main() {
                 &MenuItem::with_id(app, "chat", "Team Chat", true, None::<&str>)?,
                 &MenuItem::with_id(app, "docs", "Evolve Docs", true, None::<&str>)?,
                 &MenuItem::with_id(app, "va", "VA Assistant", true, None::<&str>)?,
-                &MenuItem::with_id(app, "sep1", "---", false, None::<&str>)?,
+                &PredefinedMenuItem::separator(app)?,
                 &MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?,
                 &MenuItem::with_id(app, "crm", "CRM Contacts", true, None::<&str>)?,
                 &MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?,
                 &MenuItem::with_id(app, "books", "Books", true, None::<&str>)?,
-                &MenuItem::with_id(app, "sep2", "---", false, None::<&str>)?,
+                &PredefinedMenuItem::separator(app)?,
                 &MenuItem::with_id(app, "clear_session", "Clear Session & Login", true, None::<&str>)?,
                 &MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?,
             ])?;
