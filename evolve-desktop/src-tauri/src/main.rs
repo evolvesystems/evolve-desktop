@@ -818,6 +818,13 @@ fn main() {
                         run_js(&badge_handle, "content", r#"
 (async function() {
     if (!window.__TAURI_INTERNALS__) return;
+    // Only fetch from the app origin. If the content webview is showing an
+    // external custom-tab page, a relative URL fetch would hit that site's
+    // origin instead of evolvepreneuriq.app. A site that happens to respond
+    // 200 at /api/v1/desktop/check-notifications with parseable JSON could
+    // silently corrupt badge counts.
+    var h = location.hostname;
+    if (h !== 'evolvepreneuriq.app' && !h.endsWith('.evolvepreneuriq.app')) return;
     try {
         var r = await fetch('/api/v1/desktop/check-notifications', {credentials:'include'});
         if (r.ok) {
