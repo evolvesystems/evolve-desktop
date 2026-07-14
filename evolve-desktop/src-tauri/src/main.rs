@@ -94,6 +94,7 @@ async fn content_reload(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn toggle_sidebar_config(app: tauri::AppHandle, open: bool) -> Result<(), String> {
+    app.state::<SidebarExpanded>().0.store(open, std::sync::atomic::Ordering::SeqCst);
     let win = app.get_window("main").ok_or("Window not found")?;
     let phys = win.inner_size().map_err(|e| e.to_string())?;
     let scale = win.scale_factor().unwrap_or(1.0);
@@ -226,6 +227,7 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 struct PendingUpdate(std::sync::Mutex<Option<tauri_plugin_updater::Update>>);
+struct SidebarExpanded(std::sync::atomic::AtomicBool);
 
 /// Called when user clicks "Install & Restart" — downloads and installs the update
 #[tauri::command]
@@ -378,6 +380,7 @@ fn main() {
             // Register PendingUpdate state once; mutated in place by both update paths.
             // manage() panics on a second call for the same type, so NEVER call it again.
             app.manage(PendingUpdate(std::sync::Mutex::new(None)));
+            app.manage(SidebarExpanded(std::sync::atomic::AtomicBool::new(false)));
 
             // Create a bare Window (not WebviewWindow) so we can add multiple webviews
             let window = tauri::window::WindowBuilder::new(app, "main")
@@ -515,16 +518,20 @@ fn main() {
             let window_clone = window.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::Resized(phys) = event {
-                    // Convert physical pixels to logical using scale factor
                     let scale = window_clone.scale_factor().unwrap_or(1.0);
                     let w = phys.width as f64 / scale;
                     let h = phys.height as f64 / scale;
+                    // Respect expanded state so resizing while config panel is open
+                    // doesn't snap the sidebar back to collapsed width.
+                    let is_expanded = app_handle2.state::<SidebarExpanded>()
+                        .0.load(std::sync::atomic::Ordering::SeqCst);
+                    let sw = if is_expanded { SIDEBAR_EXPANDED } else { SIDEBAR_WIDTH };
                     if let Some(sb) = app_handle2.get_webview("sidebar") {
-                        let _ = sb.set_size(tauri::LogicalSize::new(SIDEBAR_WIDTH, h));
+                        let _ = sb.set_size(tauri::LogicalSize::new(sw, h));
                     }
                     if let Some(ct) = app_handle2.get_webview("content") {
-                        let _ = ct.set_position(tauri::LogicalPosition::new(SIDEBAR_WIDTH, 0.0));
-                        let _ = ct.set_size(tauri::LogicalSize::new((w - SIDEBAR_WIDTH).max(100.0), h));
+                        let _ = ct.set_position(tauri::LogicalPosition::new(sw, 0.0));
+                        let _ = ct.set_size(tauri::LogicalSize::new((w - sw).max(100.0), h));
                     }
                 }
             });
