@@ -222,7 +222,22 @@ function renderTabs() {
             btn.classList.add('active');
         }
 
-        btn.innerHTML = (tab.emoji ? '<span class="icon">' + tab.emoji + '</span>' : makeSvg(tab.icon)) + '<span>' + tab.label + '</span>';
+        // Build icon + label via DOM to avoid innerHTML XSS.
+        // tab.emoji and tab.label come from server API / user input;
+        // injecting them via innerHTML lets a crafted value execute JS in
+        // the sidebar webview, which has full Tauri IPC access.
+        // makeSvg() is safe — it reads only from our hardcoded ICON_SVG map.
+        var iconSpan = document.createElement('span');
+        iconSpan.className = 'icon';
+        if (tab.emoji) {
+            iconSpan.textContent = tab.emoji;
+        } else {
+            iconSpan.innerHTML = makeSvg(tab.icon);
+        }
+        btn.appendChild(iconSpan);
+        var labelSpan = document.createElement('span');
+        labelSpan.textContent = tab.label;
+        btn.appendChild(labelSpan);
 
         // Badge for email/chat
         if (tab.id === 'email' || tab.id === 'chat') {
@@ -292,7 +307,15 @@ function renderConfigList() {
         // Icon
         var icon = document.createElement('span');
         icon.className = 'icon';
-        icon.innerHTML = tab.emoji || (tab.icon !== 'custom' ? makeSvg(tab.icon) : '\u2B50');
+        // Use textContent for emoji (user-controlled); innerHTML only for
+        // makeSvg which returns hardcoded SVG from our ICON_SVG map.
+        if (tab.emoji) {
+            icon.textContent = tab.emoji;
+        } else if (tab.icon !== 'custom') {
+            icon.innerHTML = makeSvg(tab.icon);
+        } else {
+            icon.textContent = '\u2B50';
+        }
         row.appendChild(icon);
 
         // Info
