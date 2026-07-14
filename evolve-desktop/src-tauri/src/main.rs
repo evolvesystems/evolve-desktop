@@ -52,16 +52,6 @@ async fn get_app_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// Read the bytes of a user-picked file. JS calls this AFTER the user has
-/// chosen a file via the dialog plugin, so the path is already verified-by-
-/// user-intent — no need for a separate filesystem scope/capability.
-///
-/// Returns bytes as a Vec<u8> which Tauri serialises to JS as a base64
-/// string (the standard tauri serde behaviour for binary). JS side decodes.
-#[tauri::command]
-async fn read_picked_file(path: String) -> Result<Vec<u8>, String> {
-    std::fs::read(&path).map_err(|e| format!("{}: {}", path, e))
-}
 
 #[tauri::command]
 async fn save_cached_tabs(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
@@ -398,7 +388,6 @@ fn main() {
             save_tabs_via_content,
             relay_tabs_to_sidebar,
             relay_badges_to_sidebar,
-            read_picked_file,
             open_external_url,
         ])
         .setup(|app| {
