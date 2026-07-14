@@ -181,19 +181,26 @@ var tabs = DEFAULT_TABS;
 var currentUrl = '';
 var configOpen = false;
 var dragSrcIdx = null;
+var _loadTimer1 = null, _loadTimer2 = null;
 
 // Loading indicator
 function showLoading() {
+    // Cancel stale hide-timers so they don't interrupt the new animation.
+    // Without this, a rapid navigation fires showLoading() mid-fade: the
+    // stale setTimeout callbacks then run and set class='done hidden' /
+    // class='' while the bar is still animating, making it vanish early.
+    clearTimeout(_loadTimer1);
+    clearTimeout(_loadTimer2);
     var bar = document.getElementById('loading-bar');
     bar.className = '';
-    void bar.offsetWidth; // force reflow
+    void bar.offsetWidth; // force reflow to restart CSS transition
     bar.className = 'loading';
 }
 function hideLoading() {
     var bar = document.getElementById('loading-bar');
     bar.className = 'done';
-    setTimeout(function() { bar.className = 'done hidden'; }, 200);
-    setTimeout(function() { bar.className = ''; }, 600);
+    _loadTimer1 = setTimeout(function() { bar.className = 'done hidden'; }, 200);
+    _loadTimer2 = setTimeout(function() { bar.className = ''; }, 600);
 }
 
 function makeSvg(name) {
