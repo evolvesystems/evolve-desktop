@@ -538,26 +538,36 @@ fn main() {
                 tauri::LogicalSize::new(w - SIDEBAR_WIDTH, h),
             )?;
 
-            // Window resize handler
+            // Window event handler — resize + close
             let app_handle2 = app.handle().clone();
             let window_clone = window.clone();
             window.on_window_event(move |event| {
-                if let tauri::WindowEvent::Resized(phys) = event {
-                    let scale = window_clone.scale_factor().unwrap_or(1.0);
-                    let w = phys.width as f64 / scale;
-                    let h = phys.height as f64 / scale;
-                    // Respect expanded state so resizing while config panel is open
-                    // doesn't snap the sidebar back to collapsed width.
-                    let is_expanded = app_handle2.state::<SidebarExpanded>()
-                        .0.load(std::sync::atomic::Ordering::SeqCst);
-                    let sw = if is_expanded { SIDEBAR_EXPANDED } else { SIDEBAR_WIDTH };
-                    if let Some(sb) = app_handle2.get_webview("sidebar") {
-                        let _ = sb.set_size(tauri::LogicalSize::new(sw, h));
+                match event {
+                    // Close button (red X) hides the window; the process stays alive
+                    // so the tray icon remains usable. Cmd+Q and tray > Quit call
+                    // app.exit(0) which bypasses CloseRequested and actually quits.
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        api.prevent_close();
+                        if let Some(win) = app_handle2.get_window("main") {
+                            let _ = win.hide();
+                        }
                     }
-                    if let Some(ct) = app_handle2.get_webview("content") {
-                        let _ = ct.set_position(tauri::LogicalPosition::new(sw, 0.0));
-                        let _ = ct.set_size(tauri::LogicalSize::new((w - sw).max(100.0), h));
+                    tauri::WindowEvent::Resized(phys) => {
+                        let scale = window_clone.scale_factor().unwrap_or(1.0);
+                        let w = phys.width as f64 / scale;
+                        let h = phys.height as f64 / scale;
+                        let is_expanded = app_handle2.state::<SidebarExpanded>()
+                            .0.load(std::sync::atomic::Ordering::SeqCst);
+                        let sw = if is_expanded { SIDEBAR_EXPANDED } else { SIDEBAR_WIDTH };
+                        if let Some(sb) = app_handle2.get_webview("sidebar") {
+                            let _ = sb.set_size(tauri::LogicalSize::new(sw, h));
+                        }
+                        if let Some(ct) = app_handle2.get_webview("content") {
+                            let _ = ct.set_position(tauri::LogicalPosition::new(sw, 0.0));
+                            let _ = ct.set_size(tauri::LogicalSize::new((w - sw).max(100.0), h));
+                        }
                     }
+                    _ => {}
                 }
             });
 
