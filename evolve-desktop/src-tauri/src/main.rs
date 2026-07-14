@@ -177,18 +177,24 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
             let version = update.version.clone();
             let body = update.body.clone().unwrap_or_default();
 
-            // Show update-available modal in content webview
+            // Show update-available modal in content webview.
+            // version and body come from the update server — use serde_json to
+            // produce safe JS string literals, then assign via textContent so
+            // no server-supplied text is ever parsed as HTML (innerHTML XSS).
+            let ver_json = serde_json::to_string(&version).unwrap_or_else(|_| "\"\"".to_string());
+            let notes_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".to_string());
             let js = format!(
                 r##"
 (function() {{
+  var _v={ver_json}; var _n={notes_json};
   if (document.getElementById('evolve-update-modal')) document.getElementById('evolve-update-modal').remove();
   var o = document.createElement('div');
   o.id = 'evolve-update-modal';
   o.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);font-family:system-ui,-apple-system,sans-serif;';
   o.innerHTML = '<div style="background:#1e1e2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:32px;min-width:380px;max-width:460px;color:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.5);position:relative;">'
     + '<div style="font-size:18px;font-weight:600;margin-bottom:6px;">Update Available</div>'
-    + '<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">Version {ver} is ready to install</div>'
-    + '<div id="evolve-update-notes" style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;max-height:120px;overflow-y:auto;white-space:pre-wrap;">{notes}</div>'
+    + '<div id="evolve-update-ver-line" style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;"></div>'
+    + '<div id="evolve-update-notes" style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;max-height:120px;overflow-y:auto;white-space:pre-wrap;"></div>'
     + '<div id="evolve-update-progress" style="display:none;margin-bottom:16px;">'
     + '<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;" id="evolve-update-status">Downloading...</div>'
     + '<div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;"><div id="evolve-update-bar" style="height:100%;background:#3b82f6;border-radius:3px;width:0%;transition:width 0.3s;"></div></div>'
@@ -198,6 +204,8 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
     + '<button id="evolve-update-later" style="flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;font-family:system-ui;">Later</button>'
     + '</div></div>';
   document.body.appendChild(o);
+  document.getElementById('evolve-update-ver-line').textContent = 'Version ' + _v + ' is ready to install';
+  document.getElementById('evolve-update-notes').textContent = _n;
   o.onclick = function(e) {{ if (e.target === o) o.remove(); }};
   document.getElementById('evolve-update-later').onclick = function() {{ o.remove(); }};
   document.getElementById('evolve-update-install').onclick = function() {{
@@ -210,8 +218,8 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
   }};
 }})();
 "##,
-                ver = version,
-                notes = body.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('"', "&quot;")
+                ver_json = ver_json,
+                notes_json = notes_json
             );
             run_js(&app, "content", &js);
 
@@ -647,32 +655,33 @@ fn main() {
                                         return None;
                                     }
                                     let body = update.body.clone().unwrap_or_default();
+                                    let ver_json = serde_json::to_string(&version).unwrap_or_else(|_| "\"\"".to_string());
+                                    let notes_json = serde_json::to_string(&body).unwrap_or_else(|_| "\"\"".to_string());
 
-                                    // Update sidebar version label. Renders the upgrade marker
-                                    // as an inline SVG arrow instead of a unicode emoji because
-                                    // the emoji renders inconsistently across platforms — Mac
-                                    // shows a colour glyph, Windows often shows a black-and-white
-                                    // glyph or tofu box depending on the installed emoji font.
-                                    // SVG is identical on every OS. Switched from textContent to
-                                    // innerHTML because we now inject markup.
+                                    // Sidebar version label: set innerHTML to only the static
+                                    // SVG arrow, then prepend the version as a safe text node
+                                    // so version string is never parsed as HTML markup.
                                     let sidebar_js = format!(
-                                        "document.getElementById('version-label').innerHTML='v{} <svg style=\"display:inline-block;vertical-align:middle;width:11px;height:11px;margin-left:3px;color:#ef4444\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m4.5 15.75 7.5-7.5 7.5 7.5\"/></svg>';document.getElementById('btn-info').title='Update available: v{}';",
-                                        version, version
+                                        "var _v={ver_json};var lbl=document.getElementById('version-label');lbl.innerHTML='<svg style=\"display:inline-block;vertical-align:middle;width:11px;height:11px;margin-left:3px;color:#ef4444\" xmlns=\"http://www.w3.org/2000/svg\" fill=\"none\" viewBox=\"0 0 24 24\" stroke-width=\"2.5\" stroke=\"currentColor\"><path stroke-linecap=\"round\" stroke-linejoin=\"round\" d=\"m4.5 15.75 7.5-7.5 7.5 7.5\"/></svg>';lbl.insertBefore(document.createTextNode('v'+_v+' '),lbl.firstChild);document.getElementById('btn-info').title='Update available: v'+_v;",
+                                        ver_json = ver_json
                                     );
                                     run_js(&handle_inner, "sidebar", &sidebar_js);
 
-                                    // Show update modal in content webview
+                                    // Show update modal in content webview.
+                                    // _v and _n are JSON-encoded; textContent is used for both
+                                    // after appendChild so no server text is parsed as HTML.
                                     let modal_js = format!(
                                         r##"
 (function() {{
+  var _v={ver_json}; var _n={notes_json};
   if (document.getElementById('evolve-update-modal')) document.getElementById('evolve-update-modal').remove();
   var o = document.createElement('div');
   o.id = 'evolve-update-modal';
   o.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);font-family:system-ui,-apple-system,sans-serif;';
   o.innerHTML = '<div style="background:#1e1e2e;border:1px solid rgba(255,255,255,0.1);border-radius:16px;padding:32px;min-width:380px;max-width:460px;color:#fff;box-shadow:0 20px 60px rgba(0,0,0,0.5);position:relative;">'
     + '<div style="font-size:18px;font-weight:600;margin-bottom:6px;">Update Available</div>'
-    + '<div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;">Version {ver} is ready to install</div>'
-    + '<div id="evolve-update-notes" style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;max-height:120px;overflow-y:auto;white-space:pre-wrap;">{notes}</div>'
+    + '<div id="evolve-update-ver-line" style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:16px;"></div>'
+    + '<div id="evolve-update-notes" style="background:rgba(255,255,255,0.05);border-radius:10px;padding:12px;font-size:12px;color:rgba(255,255,255,0.6);margin-bottom:16px;max-height:120px;overflow-y:auto;white-space:pre-wrap;"></div>'
     + '<div id="evolve-update-progress" style="display:none;margin-bottom:16px;">'
     + '<div style="font-size:12px;color:rgba(255,255,255,0.5);margin-bottom:6px;" id="evolve-update-status">Downloading...</div>'
     + '<div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;"><div id="evolve-update-bar" style="height:100%;background:#3b82f6;border-radius:3px;width:0%;transition:width 0.3s;"></div></div>'
@@ -682,6 +691,8 @@ fn main() {
     + '<button id="evolve-update-later" style="flex:1;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.6);font-size:13px;cursor:pointer;font-family:system-ui;">Later</button>'
     + '</div></div>';
   document.body.appendChild(o);
+  document.getElementById('evolve-update-ver-line').textContent = 'Version ' + _v + ' is ready to install';
+  document.getElementById('evolve-update-notes').textContent = _n;
   o.onclick = function(e) {{ if (e.target === o) o.remove(); }};
   document.getElementById('evolve-update-later').onclick = function() {{ o.remove(); }};
   document.getElementById('evolve-update-install').onclick = function() {{
@@ -694,8 +705,8 @@ fn main() {
   }};
 }})();
 "##,
-                                        ver = version,
-                                        notes = body.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('"', "&quot;")
+                                        ver_json = ver_json,
+                                        notes_json = notes_json
                                     );
                                     run_js(&handle_inner, "content", &modal_js);
 
