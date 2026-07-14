@@ -300,10 +300,25 @@ async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> 
 
 #[tauri::command]
 async fn save_tabs_via_content(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
-    let js = format!(
-        "fetch('/api/v1/desktop/sidebar/user-overrides',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'include',body:JSON.stringify({{overrides:{}.map(function(t,i){{return{{tab_id:t.id,hidden:!t.enabled,sort_order:i}}}})}})}}).catch(function(){{}});",
-        tabs_json
-    );
+    // Validate JSON before injecting into JS to avoid eval errors on corrupt data.
+    let _: serde_json::Value = serde_json::from_str(&tabs_json)
+        .map_err(|_| "Invalid tabs JSON".to_string())?;
+
+    // Send both overrides (visibility + sort) and custom_tabs so user-created
+    // tabs survive reinstall. The server accepts both keys in the same POST.
+    let js = format!(r#"
+(function() {{
+    var t = {};
+    var ov = t.map(function(x,i){{return{{tab_id:x.id,hidden:!x.enabled,sort_order:i}};}});
+    var ct = t.filter(function(x){{return x.custom||x.tier==='user';}});
+    fetch('/api/v1/desktop/sidebar/user-overrides',{{
+        method:'POST',
+        headers:{{'Content-Type':'application/json'}},
+        credentials:'include',
+        body:JSON.stringify({{overrides:ov,custom_tabs:ct}})
+    }}).catch(function(){{}});
+}})();
+"#, tabs_json);
     run_js(&app, "content", &js);
     Ok(())
 }
