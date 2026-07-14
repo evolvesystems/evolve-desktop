@@ -39,7 +39,16 @@ fn emit_sidebar<S: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str
 }
 
 fn nav_content(app: &tauri::AppHandle, url: &str) {
-    run_js(app, "content", &format!("window.location.href='{}'", url.replace('\'', "\\'")));
+    // Use JSON encoding instead of manual escaping. serde_json::to_string
+    // produces a double-quoted JS string literal with all special characters
+    // properly escaped, including backslashes. Manual replace('\'', "\\'") is
+    // vulnerable to backslash injection: a URL containing \' becomes \\' in
+    // the JS literal, which JS parses as a backslash + end-of-string, letting
+    // whatever follows execute as code. Backslashes are valid in URL fragments
+    // and come from deep-link paths (user-controlled evolveapp:// scheme).
+    if let Ok(json_url) = serde_json::to_string(url) {
+        run_js(app, "content", &format!("window.location.href={}", json_url));
+    }
 }
 
 
@@ -412,7 +421,9 @@ fn main() {
                     if let Some(wv) = app_for_timeout.get_webview("content") {
                         if let Ok(url) = wv.url() {
                             if url.to_string().contains("splash.html") {
-                                let _ = wv.eval(&format!("window.location.href='{}'", APP_URL));
+                                if let Ok(j) = serde_json::to_string(APP_URL) {
+                                    let _ = wv.eval(&format!("window.location.href={}", j));
+                                }
                             }
                         }
                     }
@@ -470,7 +481,9 @@ fn main() {
                 // Return early so the tab-fetch / interceptor injections below
                 // don't run on the splash page (they'd hit wrong origins).
                 if url_str.contains("splash.html") {
-                    let _ = webview.eval(&format!("window.location.href='{}'", APP_URL));
+                    if let Ok(j) = serde_json::to_string(APP_URL) {
+                        let _ = webview.eval(&format!("window.location.href={}", j));
+                    }
                     return;
                 }
 
