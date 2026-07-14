@@ -460,7 +460,9 @@ fn main() {
                         if let Ok(url) = wv.url() {
                             if url.to_string().contains("splash.html") {
                                 if let Ok(j) = serde_json::to_string(APP_URL) {
-                                    let _ = wv.eval(&format!("window.location.href={}", j));
+                                    // replace() removes splash from history so back button
+                                    // can't loop the user back to the splash screen.
+                                    let _ = wv.eval(&format!("window.location.replace({})", j));
                                 }
                             }
                         }
@@ -520,7 +522,11 @@ fn main() {
                 // don't run on the splash page (they'd hit wrong origins).
                 if url_str.contains("splash.html") {
                     if let Ok(j) = serde_json::to_string(APP_URL) {
-                        let _ = webview.eval(&format!("window.location.href={}", j));
+                        // replace() removes the splash entry from the browser history stack
+                        // so history.back() from the first app page doesn't loop back to
+                        // the splash screen (which would re-trigger this handler, creating
+                        // an infinite flash cycle and growing the history on every back click).
+                        let _ = webview.eval(&format!("window.location.replace({})", j));
                     }
                     return;
                 }
