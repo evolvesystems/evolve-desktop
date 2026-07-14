@@ -361,21 +361,32 @@ fn main() {
                 base
             };
             let file_path = assets_dir.join(path);
-            match fs::read(&file_path) {
-                Ok(data) => {
-                    let mime = if path.ends_with(".html") { "text/html" }
-                        else if path.ends_with(".js") { "application/javascript" }
-                        else if path.ends_with(".css") { "text/css" }
-                        else { "application/octet-stream" };
-                    tauri::http::Response::builder()
-                        .header("Content-Type", mime)
-                        .body(data)
-                        .unwrap()
+            let assets_canonical = assets_dir.canonicalize().unwrap_or_else(|_| assets_dir.clone());
+            match file_path.canonicalize() {
+                Ok(canonical) if canonical.starts_with(&assets_canonical) => {
+                    match fs::read(&canonical) {
+                        Ok(data) => {
+                            let mime = if path.ends_with(".html") { "text/html" }
+                                else if path.ends_with(".js") { "application/javascript" }
+                                else if path.ends_with(".css") { "text/css" }
+                                else { "application/octet-stream" };
+                            tauri::http::Response::builder()
+                                .header("Content-Type", mime)
+                                .body(data)
+                                .unwrap()
+                        }
+                        Err(_) => {
+                            tauri::http::Response::builder()
+                                .status(404)
+                                .body(b"Not Found".to_vec())
+                                .unwrap()
+                        }
+                    }
                 }
-                Err(_) => {
+                _ => {
                     tauri::http::Response::builder()
-                        .status(404)
-                        .body(b"Not Found".to_vec())
+                        .status(403)
+                        .body(b"Forbidden".to_vec())
                         .unwrap()
                 }
             }
