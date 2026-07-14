@@ -396,24 +396,32 @@ fn main() {
             app.manage(PendingUpdate(std::sync::Mutex::new(None)));
             app.manage(SidebarExpanded(std::sync::atomic::AtomicBool::new(false)));
 
-            // Create a bare Window (not WebviewWindow) so we can add multiple webviews
+            // Create a bare Window (not WebviewWindow) so we can add multiple webviews.
+            // visible(true) so the splash screen is immediately shown — previously the
+            // window was hidden for up to 5 s while the remote app loaded, making the
+            // dock bounce with nothing appearing (looked like a crash).
             let window = tauri::window::WindowBuilder::new(app, "main")
                 .title("EvolveApp")
                 .inner_size(1400.0, 900.0)
                 .min_inner_size(1024.0, 600.0)
                 .center()
-                .visible(false)
                 .build()?;
 
-            // Fallback: show the window after 5 s even if the remote page never
-            // fires PageLoadEvent::Finished (e.g. offline, DNS failure, slow net).
-            // Without this the app appears to launch (dock bounce) but no window
-            // ever appears — the user is left with nothing to click.
+            // Safety net: if we're still on the splash after 8 s (offline startup,
+            // DNS failure, or eval error), force a navigation to the real app.
+            // The window is already visible, so this only guards the infinite-splash
+            // edge case — it is NOT the primary mechanism for leaving the splash.
             {
-                let win_for_timeout = window.clone();
+                let app_for_timeout = app.handle().clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    let _ = win_for_timeout.show();
+                    std::thread::sleep(std::time::Duration::from_secs(8));
+                    if let Some(wv) = app_for_timeout.get_webview("content") {
+                        if let Ok(url) = wv.url() {
+                            if url.to_string().contains("splash.html") {
+                                let _ = wv.eval(&format!("window.location.href='{}'", APP_URL));
+                            }
+                        }
+                    }
                 });
             }
 
@@ -437,12 +445,15 @@ fn main() {
                 tauri::LogicalSize::new(SIDEBAR_WIDTH, h),
             )?;
 
-            // Content webview — loads the web app
-            // on_page_load must be set on the builder BEFORE add_child()
+            // Content webview — starts on splash.html (served via the evolve://
+            // custom scheme). on_page_load fires when splash finishes rendering
+            // and immediately navigates to APP_URL, so the user sees the splash
+            // for only the brief moment it takes WKWebView to process the local HTML.
+            // on_page_load must be set on the builder BEFORE add_child().
             let app_handle = app.handle().clone();
             let content_builder = tauri::webview::WebviewBuilder::new(
                 "content",
-                WebviewUrl::External(APP_URL.parse().unwrap()),
+                WebviewUrl::CustomProtocol("evolve://localhost/splash.html".parse().unwrap()),
             )
             .user_agent(&format!("EvolveApp/{} Tauri/2", env!("CARGO_PKG_VERSION")))
             .background_color(tauri::window::Color(15, 15, 25, 255))
@@ -461,7 +472,15 @@ fn main() {
                     _ => return,
                 }
 
-                // Show window on first load
+                // Splash finished rendering — navigate to the real app.
+                // Return early so the tab-fetch / interceptor injections below
+                // don't run on the splash page (they'd hit wrong origins).
+                if url_str.contains("splash.html") {
+                    let _ = webview.eval(&format!("window.location.href='{}'", APP_URL));
+                    return;
+                }
+
+                // Ensure the window is visible (harmless if already shown)
                 if let Some(win) = app_handle.get_window("main") {
                     let _ = win.show();
                 }
