@@ -270,6 +270,18 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     app.restart();
 }
 
+/// Open a URL in the system browser. Used for external links (target="_blank",
+/// third-party domains) that should not navigate the content webview itself.
+/// Only http / https / mailto are allowed — anything else is rejected.
+#[tauri::command]
+async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+    if !url.starts_with("https://") && !url.starts_with("http://") && !url.starts_with("mailto:") {
+        return Err("Only http/https/mailto URLs are supported".to_string());
+    }
+    app.shell().open(&url, None).map_err(|e| e.to_string())
+}
+
 /// Called from content webview JS to relay tabs data to sidebar
 #[tauri::command]
 async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
@@ -360,6 +372,7 @@ fn main() {
             relay_tabs_to_sidebar,
             relay_badges_to_sidebar,
             read_picked_file,
+            open_external_url,
         ])
         .setup(|app| {
             // Register PendingUpdate state once; mutated in place by both update paths.
@@ -459,6 +472,34 @@ fn main() {
                                 window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
                             }
                         } catch(e) {}
+                    })();
+                "#);
+
+                // External-link interceptor: open target="_blank" and cross-origin
+                // links in the system browser. Without this, WKWebView/WebView2
+                // silently drops every target="_blank" click — the link just does nothing.
+                let _ = webview.eval(r#"
+                    (function() {
+                        if (window.__evolve_ext_links_hooked__) return;
+                        window.__evolve_ext_links_hooked__ = true;
+                        document.addEventListener('click', function(e) {
+                            var el = e.target;
+                            while (el && el.tagName !== 'A') el = el.parentElement;
+                            if (!el || !el.href) return;
+                            var href = el.href;
+                            try {
+                                var u = new URL(href);
+                                var isInternal = u.hostname === 'evolvepreneuriq.app'
+                                    || u.hostname.endsWith('.evolvepreneuriq.app');
+                                var isBlank = el.target === '_blank';
+                                if (!isInternal || isBlank) {
+                                    if (u.protocol === 'https:' || u.protocol === 'http:' || u.protocol === 'mailto:') {
+                                        e.preventDefault();
+                                        window.__TAURI_INTERNALS__.invoke('open_external_url', {url: href});
+                                    }
+                                }
+                            } catch(_) {}
+                        }, true);
                     })();
                 "#);
             });
