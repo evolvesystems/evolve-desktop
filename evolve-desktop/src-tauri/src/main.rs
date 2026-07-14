@@ -9,7 +9,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::PageLoadEvent,
     Emitter, Manager, WebviewUrl,
@@ -596,6 +596,26 @@ fn main() {
                         }
                     }
                 });
+            }
+
+            // macOS: install a native Edit menu so WKWebView routes Cmd+C/V/X/Z
+            // to the content webview. Without this entry in the app's native menu
+            // bar, macOS intercepts those keystrokes at the OS level and they
+            // never fire a DOM paste/copy event inside the webview.
+            #[cfg(target_os = "macos")]
+            {
+                let h = app.handle().clone();
+                let edit = Submenu::with_items(&h, "Edit", true, &[
+                    &PredefinedMenuItem::undo(&h, None)?,
+                    &PredefinedMenuItem::redo(&h, None)?,
+                    &PredefinedMenuItem::separator(&h)?,
+                    &PredefinedMenuItem::cut(&h, None)?,
+                    &PredefinedMenuItem::copy(&h, None)?,
+                    &PredefinedMenuItem::paste(&h, None)?,
+                    &PredefinedMenuItem::separator(&h)?,
+                    &PredefinedMenuItem::select_all(&h, None)?,
+                ])?;
+                app.set_menu(Menu::with_items(&h, &[&edit])?)?;
             }
 
             // --- System tray ---
