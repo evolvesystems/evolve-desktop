@@ -618,13 +618,19 @@ fn main() {
                 let handle = app.handle().clone();
                 app.deep_link().on_open_url(move |event| {
                     for url in event.urls() {
-                        if let Some(path) = url.as_str().strip_prefix("evolveapp://") {
-                            let path = if path.starts_with('/') { path.to_string() } else { format!("/{}", path) };
-                            nav_content(&handle, &format!("{}{}", APP_URL, path));
-                            if let Some(win) = handle.get_window("main") {
-                                let _ = win.show();
-                                let _ = win.set_focus();
-                            }
+                        // url.path() gives just the path component, independent of the
+                        // host. strip_prefix("evolveapp://") would leave the host in the
+                        // result: "evolveapp://localhost/dashboard" → "localhost/dashboard"
+                        // → "/localhost/dashboard" → 404. url.path() always gives "/dashboard".
+                        let mut target = url.path().to_string();
+                        if let Some(q) = url.query() {
+                            target.push('?');
+                            target.push_str(q);
+                        }
+                        nav_content(&handle, &format!("{}{}", APP_URL, target));
+                        if let Some(win) = handle.get_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
                         }
                     }
                 });
