@@ -713,13 +713,26 @@ fn main() {
                 });
             }
 
-            // macOS: install a native Edit menu so WKWebView routes Cmd+C/V/X/Z
-            // to the content webview. Without this entry in the app's native menu
-            // bar, macOS intercepts those keystrokes at the OS level and they
-            // never fire a DOM paste/copy event inside the webview.
+            // macOS: install native menu bar submenus.
+            //
+            // The first submenu MUST be the app name menu — macOS renders it in
+            // the first slot (where "EvolveApp" should appear). Without it, macOS
+            // puts "Edit" there, which is a HIG violation: Cmd+Q has no menu entry,
+            // "Hide EvolveApp" (Cmd+H) is absent, and the menu bar looks wrong.
+            //
+            // The Edit submenu is required so WKWebView routes Cmd+C/V/X/Z to the
+            // content webview; without it, macOS intercepts those keystrokes at the
+            // OS level and they never fire DOM paste/copy events inside the webview.
             #[cfg(target_os = "macos")]
             {
                 let h = app.handle().clone();
+                let app_menu = Submenu::with_items(&h, "EvolveApp", true, &[
+                    &PredefinedMenuItem::hide(&h, None)?,
+                    &PredefinedMenuItem::hide_others(&h, None)?,
+                    &PredefinedMenuItem::show_all(&h, None)?,
+                    &PredefinedMenuItem::separator(&h)?,
+                    &PredefinedMenuItem::quit(&h, None)?,
+                ])?;
                 let edit = Submenu::with_items(&h, "Edit", true, &[
                     &PredefinedMenuItem::undo(&h, None)?,
                     &PredefinedMenuItem::redo(&h, None)?,
@@ -730,7 +743,7 @@ fn main() {
                     &PredefinedMenuItem::separator(&h)?,
                     &PredefinedMenuItem::select_all(&h, None)?,
                 ])?;
-                app.set_menu(Menu::with_items(&h, &[&edit])?)?;
+                app.set_menu(Menu::with_items(&h, &[&app_menu, &edit])?)?;
             }
 
             // --- System tray ---
