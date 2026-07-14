@@ -65,12 +65,14 @@ body::-webkit-scrollbar { width:0; }
 #add-form .add-btn { width:100%; padding:7px; border-radius:6px; border:none; background:#3b82f6; color:#fff; font-size:11px; cursor:pointer; font-family:system-ui; }
 #add-form .reset-btn { margin-top:8px; width:100%; padding:7px; border-radius:6px; border:1px solid rgba(255,255,255,0.12); background:none; color:rgba(255,255,255,0.4); font-size:11px; cursor:pointer; font-family:system-ui; }
 
-/* Info popup — compact tooltip style, fits within sidebar */
-#info-popup { position:fixed; bottom:52px; left:4px; width:48px; background:oklch(0.22 0.006 285.88); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:6px; z-index:20; box-shadow:0 4px 12px rgba(0,0,0,0.4); display:none; text-align:center; }
-#info-popup.open { display:block; }
-#info-popup .title { display:none; }
-#info-popup .ver { font-size:8px; color:rgba(255,255,255,0.6); margin-bottom:2px; line-height:1.2; }
-#info-popup .update-link { display:block; padding:4px; border-radius:4px; background:#3b82f6; color:#fff; text-decoration:none; font-size:7px; text-align:center; font-weight:500; margin-top:4px; }
+/* Inline confirm overlay (replaces native confirm() which blocks WKWebView) */
+#confirm-overlay { position:fixed; inset:0; z-index:100; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.4); }
+#confirm-overlay.open { display:flex; }
+#confirm-box { background:oklch(0.24 0.006 285.88); border:1px solid rgba(255,255,255,0.12); border-radius:10px; padding:16px; min-width:180px; max-width:220px; color:#fff; font-size:12px; text-align:center; }
+#confirm-box .msg { margin-bottom:12px; line-height:1.4; }
+#confirm-box .btns { display:flex; gap:8px; }
+#confirm-box .btn-ok { flex:1; padding:6px; border-radius:6px; border:none; background:#ef4444; color:#fff; font-size:11px; cursor:pointer; font-family:system-ui; }
+#confirm-box .btn-cancel { flex:1; padding:6px; border-radius:6px; border:1px solid rgba(255,255,255,0.15); background:none; color:rgba(255,255,255,0.6); font-size:11px; cursor:pointer; font-family:system-ui; }
 
 /* Save indicator */
 #save-indicator { position:fixed; top:8px; left:60px; z-index:30; padding:4px 12px; border-radius:6px; font-size:11px; opacity:0; transition:opacity 0.3s; pointer-events:none; }
@@ -121,12 +123,13 @@ body::-webkit-scrollbar { width:0; }
   </div>
 </div>
 
-<div id="info-popup">
-  <div class="title">EvolveApp Desktop</div>
-  <div class="ver">Version: <span id="info-current-ver">checking...</span></div>
-  <div class="ver">Latest: <span id="info-latest-ver">checking...</span></div>
-  <div id="info-update-section" style="display:none">
-    <a class="update-link" id="info-update-link" href="#">Download Update</a>
+<div id="confirm-overlay">
+  <div id="confirm-box">
+    <div class="msg" id="confirm-msg"></div>
+    <div class="btns">
+      <button class="btn-ok" id="confirm-ok">Reset</button>
+      <button class="btn-cancel" id="confirm-cancel">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -225,20 +228,9 @@ function renderTabs() {
             btn.appendChild(badge);
         }
 
-        btn.onclick = function(e) {
+        btn.onclick = function() {
             showLoading();
-            // Ctrl+click or middle-click = force new tab
-            var forceNew = e.ctrlKey || e.metaKey;
             invoke('navigate_content', { url: url });
-        };
-
-        btn.onmousedown = function(e) {
-            // Middle-click = open in new tab
-            if (e.button === 1) {
-                e.preventDefault();
-                showLoading();
-                invoke('create_tab', { url: url });
-            }
         };
 
         container.appendChild(btn);
@@ -322,9 +314,6 @@ function renderConfigList() {
 }
 
 function toggleConfig() {
-    // Close info popup if open
-    document.getElementById('info-popup').classList.remove('open');
-
     configOpen = !configOpen;
     document.getElementById('config-panel').classList.toggle('open', configOpen);
     document.getElementById('btn-settings').classList.toggle('open', configOpen);
@@ -382,17 +371,7 @@ function showIndicator(text, color) {
 async function checkVersion() {
     try {
         var ver = await invoke('get_app_version');
-        document.getElementById('info-current-ver').textContent = 'v' + ver;
         document.getElementById('version-label').textContent = 'v' + ver;
-    } catch(e) {}
-
-    // Check latest version from server
-    try {
-        var resp = await fetch(APP + '/api/v1/desktop/version');
-        if (resp.ok) {
-            var data = await resp.json();
-            document.getElementById('info-latest-ver').textContent = data.version ? 'v' + data.version : 'unknown';
-        }
     } catch(e) {}
 }
 
@@ -494,7 +473,7 @@ document.getElementById('btn-logout').onclick = function() {
     window.__TAURI_INTERNALS__.invoke('navigate_content', {url: 'https://evolvepreneuriq.app/tenant/reset-session'});
 };
 document.getElementById('btn-info').onclick = function() {
-    document.getElementById('info-popup').classList.toggle('open');
+    invoke('show_info_modal');
 };
 document.getElementById('btn-settings').onclick = toggleConfig;
 document.getElementById('btn-close-config').onclick = function() {
@@ -524,13 +503,25 @@ document.getElementById('btn-add-tab').onclick = function() {
     saveTabs();
 };
 
+function showConfirm(msg, onOk) {
+    document.getElementById('confirm-msg').textContent = msg;
+    document.getElementById('confirm-overlay').classList.add('open');
+    document.getElementById('confirm-ok').onclick = function() {
+        document.getElementById('confirm-overlay').classList.remove('open');
+        onOk();
+    };
+    document.getElementById('confirm-cancel').onclick = function() {
+        document.getElementById('confirm-overlay').classList.remove('open');
+    };
+}
+
 document.getElementById('btn-reset').onclick = function() {
-    if (confirm('Reset sidebar to defaults?')) {
+    showConfirm('Reset sidebar to defaults?', function() {
         tabs = DEFAULT_TABS.map(function(t) { return Object.assign({}, t); });
         renderConfigList();
         renderTabs();
         saveTabs();
-    }
+    });
 };
 
 // =====================================================================
