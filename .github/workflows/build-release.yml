@@ -486,6 +486,9 @@ jobs:
         with:
           name: macos-${{ matrix.platform.rust_target }}
           path: |
+            evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/macos/*.app.tar.gz
+            evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/macos/*.app.tar.gz.sig
+            evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/dmg/*.dmg
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/pkg/*.pkg
             evolve-desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/**/*.json
 
@@ -526,6 +529,9 @@ jobs:
             artifacts/**/*.exe
             artifacts/**/*.exe.sig
             artifacts/**/*.pkg
+            artifacts/**/*.dmg
+            artifacts/**/*.app.tar.gz
+            artifacts/**/*.app.tar.gz.sig
             artifacts/**/*.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
