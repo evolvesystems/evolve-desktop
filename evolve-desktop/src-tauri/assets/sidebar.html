@@ -379,64 +379,60 @@ async function checkVersion() {
 //  EVENT LISTENERS
 // =====================================================================
 
-// Listen for content webview navigation (emitted by Rust)
-if (window.__TAURI_INTERNALS__) {
+// Tauri 2.x requires a numeric callback ID from transformCallback — passing
+// a raw function as `handler` silently fails. Wrap all event listeners here.
+function tauriListen(eventName, handler) {
+    if (!window.__TAURI_INTERNALS__) return;
+    var cbId = window.__TAURI_INTERNALS__.transformCallback(handler);
     window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
-        event: 'content-navigated',
-        handler: function(event) {
-            currentUrl = event.payload || '';
-            hideLoading();
-            renderTabs();
-        }
-    }).catch(function() {
-        // Fallback: poll for URL changes
-        setInterval(async function() {
-            try {
-                var url = await invoke('get_content_url');
-                if (url !== currentUrl) {
-                    currentUrl = url;
-                    renderTabs();
-                }
-            } catch(e) {}
-        }, 1000);
+        event: eventName,
+        handler: cbId
+    }).catch(function(e) {
+        console.warn('[sidebar] listen failed for', eventName, e);
+    });
+}
+
+if (window.__TAURI_INTERNALS__) {
+    // Content navigation: update active tab highlight + hide loading bar.
+    // Keep polling as a belt-and-suspenders fallback for the first load.
+    tauriListen('content-navigated', function(event) {
+        currentUrl = event.payload || '';
+        hideLoading();
+        renderTabs();
+    });
+    setInterval(async function() {
+        try {
+            var url = await invoke('get_content_url');
+            if (url && url !== currentUrl) {
+                currentUrl = url;
+                renderTabs();
+            }
+        } catch(e) {}
+    }, 2000);
+
+    tauriListen('content-loading', function() {
+        showLoading();
     });
 
-    // Listen for loading started
-    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
-        event: 'content-loading',
-        handler: function() {
-            showLoading();
-        }
-    }).catch(function() {});
+    tauriListen('badge-update', function(event) {
+        try {
+            var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+            updateBadge('email', data.unread_emails || 0);
+            updateBadge('chat', data.unread_chats || 0);
+        } catch(e) {}
+    });
 
-    // Listen for badge updates
-    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
-        event: 'badge-update',
-        handler: function(event) {
-            try {
-                var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
-                updateBadge('email', data.unread_emails || 0);
-                updateBadge('chat', data.unread_chats || 0);
-            } catch(e) {}
-        }
-    }).catch(function() {});
-
-    // Listen for fresh tabs from content webview
-    window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
-        event: 'tabs-loaded',
-        handler: function(event) {
-            try {
-                var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
-                if (data && Array.isArray(data)) {
-                    tabs = data;
-                    renderTabs();
-                    if (configOpen) renderConfigList();
-                    // Cache locally
-                    invoke('save_cached_tabs', { tabsJson: JSON.stringify(tabs) });
-                }
-            } catch(e) {}
-        }
-    }).catch(function() {});
+    tauriListen('tabs-loaded', function(event) {
+        try {
+            var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
+            if (data && Array.isArray(data)) {
+                tabs = data;
+                renderTabs();
+                if (configOpen) renderConfigList();
+                invoke('save_cached_tabs', { tabsJson: JSON.stringify(tabs) });
+            }
+        } catch(e) {}
+    });
 }
 
 function updateBadge(tabId, count) {
