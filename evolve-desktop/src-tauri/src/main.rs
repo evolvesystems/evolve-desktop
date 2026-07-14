@@ -834,10 +834,10 @@ fn main() {
                 .tooltip("EvolveApp")
                 .on_menu_event(|app, event| {
                     let path = match event.id.as_ref() {
-                        "email" => "/email", "chat" => "/chat", "docs" => "/evolve-docs",
+                        "email" => "/email-manager", "chat" => "/chat", "docs" => "/evolve-docs",
                         "va" => "/workspace/va", "dashboard" => "/dashboard",
-                        "crm" => "/crm-marketing/contacts", "calendar" => "/scheduling",
-                        "books" => "/books",
+                        "crm" => "/crm-marketing/contacts", "calendar" => "/evolvemeet",
+                        "books" => "/books/my-books",
                         "clear_session" => "/tenant/reset-session",
                         "quit" => { app.exit(0); return; }
                         _ => return,
