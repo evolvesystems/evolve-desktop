@@ -209,6 +209,24 @@ function renderTabs() {
     container.innerHTML = '';
     var enabled = tabs.filter(function(t) { return t.enabled; });
 
+    // Find the most specific active tab: the longest tab URL that is a prefix
+    // of currentUrl. indexOf would incorrectly mark both /email-manager and
+    // /email-manager/calendar as active when you're on the calendar page, because
+    // the shorter URL is a substring of the longer. startsWith + longest-wins
+    // ensures exactly one tab is active at a time.
+    var bestMatchId = null;
+    if (currentUrl) {
+        var bestLen = 0;
+        enabled.forEach(function(t) {
+            var u = t.url;
+            if (u && !u.startsWith('http')) u = APP + u;
+            if (currentUrl.startsWith(u) && u.length > bestLen) {
+                bestLen = u.length;
+                bestMatchId = t.id;
+            }
+        });
+    }
+
     enabled.forEach(function(tab) {
         var btn = document.createElement('button');
         btn.className = 'tab-btn';
@@ -217,8 +235,7 @@ function renderTabs() {
         var url = tab.url;
         if (url && !url.startsWith('http')) url = APP + url;
 
-        // Active detection
-        if (currentUrl && currentUrl.indexOf(url) !== -1) {
+        if (tab.id === bestMatchId) {
             btn.classList.add('active');
         }
 
