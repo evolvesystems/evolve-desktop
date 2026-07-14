@@ -491,13 +491,35 @@ document.getElementById('btn-back').onclick = function() {
 document.getElementById('btn-refresh').onclick = function() {
     invoke('content_reload');
 };
+function copyText(text) {
+    // navigator.clipboard requires a secure context (HTTPS/localhost).
+    // The sidebar runs under evolve:// (custom protocol) which WKWebView does
+    // not consider secure, so the Clipboard API is unavailable. Fall back to
+    // the legacy execCommand path which works in any context.
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    var ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+}
+
 document.getElementById('btn-copy').onclick = async function() {
     try {
         var url = await invoke('get_content_url');
-        navigator.clipboard.writeText(url);
+        await copyText(url);
         document.getElementById('copy-label').textContent = 'Copied!';
         setTimeout(function() { document.getElementById('copy-label').textContent = 'Copy'; }, 2000);
-    } catch(e) {}
+    } catch(e) {
+        document.getElementById('copy-label').textContent = 'Failed';
+        setTimeout(function() { document.getElementById('copy-label').textContent = 'Copy'; }, 2000);
+    }
 };
 document.getElementById('btn-logout').onclick = function() {
     window.__TAURI_INTERNALS__.invoke('navigate_content', {url: 'https://evolvepreneuriq.app/tenant/reset-session'});
