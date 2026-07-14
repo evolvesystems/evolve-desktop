@@ -206,7 +206,7 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
             run_js(&app, "content", &js);
 
             // Store the update in app state for install_update to use
-            app.manage(PendingUpdate(std::sync::Mutex::new(Some(update))));
+            *app.state::<PendingUpdate>().0.lock().unwrap() = Some(update);
         }
         None => {
             // No update available — show brief toast
@@ -362,6 +362,10 @@ fn main() {
             read_picked_file,
         ])
         .setup(|app| {
+            // Register PendingUpdate state once; mutated in place by both update paths.
+            // manage() panics on a second call for the same type, so NEVER call it again.
+            app.manage(PendingUpdate(std::sync::Mutex::new(None)));
+
             // Create a bare Window (not WebviewWindow) so we can add multiple webviews
             let window = tauri::window::WindowBuilder::new(app, "main")
                 .title("EvolveApp")
@@ -585,7 +589,7 @@ fn main() {
                                     );
                                     run_js(&handle_inner, "content", &modal_js);
 
-                                    handle_inner.manage(PendingUpdate(std::sync::Mutex::new(Some(update))));
+                                    *handle_inner.state::<PendingUpdate>().0.lock().unwrap() = Some(update);
                                     Some(version)
                                 }
                                 _ => None,
