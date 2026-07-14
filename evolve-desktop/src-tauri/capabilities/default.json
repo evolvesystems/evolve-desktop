@@ -33,7 +33,6 @@
     "core:app:allow-app-hide",
     "core:app:allow-version",
     "shell:default",
-    "shell:allow-open",
     "http:default"
   ]
 }
