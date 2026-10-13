@@ -344,7 +344,30 @@ async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Resu
 #[tauri::command]
 async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> Result<(), String> {
     emit_sidebar(&app, "badge-update", &badges_json);
+    notify_on_new_mail(&app, &badges_json);
     Ok(())
+}
+
+/// Last unread-email count seen by the badge poll (-1 = no baseline yet).
+static LAST_UNREAD_EMAILS: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+
+/// Show a native OS notification when the unread-email count rises. The first
+/// poll only sets the baseline, so launching the app never notifies for old mail.
+fn notify_on_new_mail(app: &tauri::AppHandle, badges_json: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let unread = match serde_json::from_str::<serde_json::Value>(badges_json)
+        .ok()
+        .and_then(|v| v.get("unread_emails").and_then(|n| n.as_i64()))
+    {
+        Some(n) => n,
+        None => return,
+    };
+    let prev = LAST_UNREAD_EMAILS.swap(unread, std::sync::atomic::Ordering::SeqCst);
+    if prev >= 0 && unread > prev {
+        let new = unread - prev;
+        let body = if new == 1 { "You have 1 new email".to_string() } else { format!("You have {} new emails", new) };
+        let _ = app.notification().builder().title("EvolveApp").body(body).show();
+    }
 }
 
 #[tauri::command]
@@ -427,6 +450,7 @@ fn main() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             save_cached_tabs,
