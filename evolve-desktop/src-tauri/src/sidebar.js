@@ -182,9 +182,15 @@
         infoBtn.innerHTML = '<span style="font-size:16px">\u24D8</span><span id="sidebar-version-label" style="font-size:8px;opacity:0.6">...</span>';
         infoBtn.onmouseenter = function() { this.style.color = 'rgba(255,255,255,0.8)'; };
         infoBtn.onmouseleave = function() { this.style.color = 'rgba(255,255,255,0.3)'; };
-        infoBtn.onclick = function() {
+        infoBtn.onclick = function(e) {
+            e.stopPropagation();
             var popup = document.getElementById('sidebar-info-popup');
-            if (popup) { popup.style.display = popup.style.display === 'none' ? 'block' : 'none'; }
+            if (!popup) return;
+            // The sidebar webview is only 56px wide; the 220px popup is clipped
+            // (invisible) unless the webview is widened first.
+            var show = popup.style.display === 'none';
+            popup.style.display = show ? 'block' : 'none';
+            try { window.__TAURI_INTERNALS__.invoke('toggle_sidebar_config', {open: show}); } catch(_) {}
         };
         sidebarEl.appendChild(infoBtn);
 
@@ -242,6 +248,23 @@
             + '<div id="info-update-available" style="display:none;margin-bottom:10px"><a href="'+APP+'/download" style="display:block;padding:8px;border-radius:8px;background:#3b82f6;color:#fff;text-decoration:none;font-size:11px;text-align:center;font-weight:500">Download Update</a></div>'
             + '<div style="border-top:1px solid rgba(255,255,255,0.08);padding-top:8px"><a href="'+APP+'/download" style="color:rgba(255,255,255,0.4);font-size:10px;text-decoration:none">Downloads</a></div>';
         document.body.appendChild(infoPopup);
+
+        // Open the download page in the system browser (a plain navigation would
+        // load it inside the 56px sidebar webview).
+        infoPopup.querySelectorAll('a').forEach(function(a) {
+            a.onclick = function(ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                openInBrowser(a.href);
+            };
+        });
+        infoPopup.onclick = function(ev) { ev.stopPropagation(); };
+        document.addEventListener('click', function() {
+            if (infoPopup.style.display === 'block') {
+                infoPopup.style.display = 'none';
+                try { window.__TAURI_INTERNALS__.invoke('toggle_sidebar_config', {open: false}); } catch(_) {}
+            }
+        });
     }
 
     /**
@@ -847,8 +870,12 @@
                     var l = vData.downloadUrls.linux;
                     downloadUrl = l.flatpak || l.appimage || l.deb;
                 }
+                // Always send people to the public download page, not a raw GitHub asset.
+                downloadUrl = APP + '/download';
                 if (downloadUrl && updateDiv) {
                     updateDiv.innerHTML = '<a href="' + downloadUrl + '" style="display:block;padding:8px;border-radius:8px;background:#3b82f6;color:#fff;text-decoration:none;font-size:11px;text-align:center;font-weight:500">Download v' + latest + ' & Install</a>';
+                    var dl = updateDiv.querySelector('a');
+                    if (dl) dl.onclick = function(ev) { ev.preventDefault(); ev.stopPropagation(); openInBrowser(dl.href); };
                 }
             }
         }
