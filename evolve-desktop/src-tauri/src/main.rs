@@ -16,6 +16,7 @@ use tauri::{
 };
 use tauri_plugin_updater::UpdaterExt;
 use std::fs;
+mod offline_cache;
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
 const SIDEBAR_WIDTH: f64 = 56.0;
@@ -467,6 +468,9 @@ fn main() {
             relay_tabs_to_sidebar,
             relay_badges_to_sidebar,
             open_external_url,
+            offline_cache::offline_cache_put,
+            offline_cache::offline_cache_get,
+            offline_cache::offline_cache_clear,
         ])
         .setup(|app| {
             // Register PendingUpdate state once; mutated in place by both update paths.
