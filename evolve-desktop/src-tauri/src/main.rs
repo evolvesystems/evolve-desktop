@@ -152,12 +152,16 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
     + '<div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:rgba(255,255,255,0.5);">Latest</span><span id="evolve-info-latest" style="font-weight:500;">checking...</span></div>'
     + '</div>'
     + '<button id="evolve-info-check-update" style="width:100%;margin-top:16px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:system-ui;transition:all 0.15s;">Check for Updates</button>'
+    + '<button id="evolve-info-download" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:none;background:#3b82f6;color:#fff;font-size:13px;font-weight:500;cursor:pointer;font-family:system-ui;">Open download page</button>'
     + '</div>';
   document.body.appendChild(overlay);
   overlay.onclick = function(e) {{ if (e.target === overlay) overlay.remove(); }};
   document.getElementById('evolve-info-close').onclick = function() {{ overlay.remove(); }};
   document.getElementById('evolve-info-close').onmouseenter = function() {{ this.style.background='rgba(255,255,255,0.15)'; this.style.color='#fff'; }};
   document.getElementById('evolve-info-close').onmouseleave = function() {{ this.style.background='rgba(255,255,255,0.08)'; this.style.color='rgba(255,255,255,0.6)'; }};
+  document.getElementById('evolve-info-download').onclick = function() {{
+    window.__TAURI_INTERNALS__.invoke('open_external_url', {{ url: 'https://evolvepreneuriq.app/download' }}).catch(function() {{}});
+  }};
   document.getElementById('evolve-info-check-update').onclick = function() {{
     var btn = this;
     btn.textContent = 'Checking...';
@@ -179,7 +183,14 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
   }};
   fetch('https://evolvepreneuriq.app/api/v1/desktop/version').then(function(r){{ return r.json(); }}).then(function(d){{
     var el = document.getElementById('evolve-info-latest');
-    if (el && d.version) {{ el.textContent = 'v' + d.version; }}
+    if (el && d.version) {{
+      el.textContent = 'v' + d.version;
+      if (d.version !== '{ver}') {{
+        el.style.color = '#f59e0b';
+        var dl = document.getElementById('evolve-info-download');
+        if (dl) {{ dl.textContent = 'Download v' + d.version; }}
+      }}
+    }}
   }}).catch(function(){{}});
 }})();
 "##, ver = version);
@@ -346,7 +357,121 @@ async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Resu
 async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> Result<(), String> {
     emit_sidebar(&app, "badge-update", &badges_json);
     notify_on_new_mail(&app, &badges_json);
+    notify_lab(&app, &badges_json);
     Ok(())
+}
+
+#[derive(Clone)]
+struct LabItem {
+    key: String,
+    runner_id: String,
+    tab_id: String,
+    title: String,
+    reason: String,
+}
+
+/// Keys of Lab alerts already shown (None = no poll seen yet, so the first poll only sets the
+/// baseline and launching the app never notifies for things that were already waiting).
+static LAB_NOTIFIED: std::sync::Mutex<Option<std::collections::HashSet<String>>> = std::sync::Mutex::new(None);
+/// Signature of the Lab items currently in the tray menu (rebuild only when it changes).
+static LAB_MENU_SIG: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+fn is_uuid(s: &str) -> bool {
+    s.len() == 36 && s.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+fn short(s: &str, max: usize) -> String {
+    if s.chars().count() <= max { s.to_string() } else { format!("{}…", s.chars().take(max - 1).collect::<String>()) }
+}
+
+fn str_of(v: &serde_json::Value, k: &str) -> String {
+    v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
+}
+
+/// Tray menu: Lab tabs that need you first (click opens that tab), then the usual shortcuts.
+fn build_tray_menu(app: &tauri::AppHandle, lab: &[LabItem]) -> tauri::Result<Menu<tauri::Wry>> {
+    let menu = Menu::new(app)?;
+    for it in lab.iter().take(5) {
+        let label = format!("Lab: {} — {}", short(&it.title, 28), short(&it.reason, 32));
+        menu.append(&MenuItem::with_id(app, format!("lab:{}:{}", it.runner_id, it.tab_id), label, true, None::<&str>)?)?;
+    }
+    if !lab.is_empty() {
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
+    menu.append(&MenuItem::with_id(app, "lab_home", "Lab", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "email", "Email", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "chat", "Team Chat", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "docs", "Evolve Docs", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "va", "VA Assistant", true, None::<&str>)?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "crm", "CRM Contacts", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "books", "Books", true, None::<&str>)?)?;
+    menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "clear_session", "Clear Session & Login", true, None::<&str>)?)?;
+    menu.append(&MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?)?;
+    Ok(menu)
+}
+
+/// Lab tabs that need this person (the `lab` key of check-notifications; absent for people
+/// without Lab access): OS notification once per new alert, tray tooltip + menu.
+/// A desktop notification cannot be clicked through (the plugin has no desktop click handler),
+/// so "open that tab" is the tray menu entry.
+fn notify_lab(app: &tauri::AppHandle, badges_json: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let root: serde_json::Value = match serde_json::from_str(badges_json) { Ok(v) => v, Err(_) => return };
+    let (needs, items): (i64, Vec<LabItem>) = match root.get("lab") {
+        Some(lab) => (
+            lab.get("needs_you").and_then(|n| n.as_i64()).unwrap_or(0),
+            lab.get("items").and_then(|i| i.as_array()).map(|a| a.iter().filter_map(|it| {
+                let (runner_id, tab_id, key) = (str_of(it, "runner_id"), str_of(it, "tab_id"), str_of(it, "key"));
+                if key.is_empty() || !is_uuid(&runner_id) || !is_uuid(&tab_id) { return None; }
+                Some(LabItem { key, runner_id, tab_id, title: str_of(it, "title"), reason: str_of(it, "reason") })
+            }).collect()).unwrap_or_default(),
+        ),
+        None => (0, Vec::new()),
+    };
+
+    // Which alerts are new since the last poll (first poll = baseline only).
+    let (first, fresh): (bool, Vec<LabItem>) = {
+        let mut guard = LAB_NOTIFIED.lock().unwrap();
+        let first = guard.is_none();
+        let seen = guard.get_or_insert_with(std::collections::HashSet::new);
+        let fresh = items.iter().filter(|i| !seen.contains(&i.key)).cloned().collect();
+        *seen = items.iter().map(|i| i.key.clone()).collect();
+        (first, fresh)
+    };
+    if !first && !fresh.is_empty() {
+        if fresh.len() > 3 {
+            let _ = app.notification().builder().title("EvolveApp Lab").body(format!("{} Lab tabs need you", fresh.len())).show();
+        } else {
+            for it in &fresh {
+                let _ = app.notification().builder()
+                    .title(format!("Lab: {}", short(&it.title, 60)))
+                    .body(short(&it.reason, 120))
+                    .show();
+            }
+        }
+    }
+
+    // Tray: tooltip always, menu only when the item list changed.
+    if let Some(tray) = app.tray_by_id("main") {
+        let tip = match needs {
+            0 => "EvolveApp".to_string(),
+            1 => "EvolveApp: 1 Lab tab needs you".to_string(),
+            n => format!("EvolveApp: {} Lab tabs need you", n),
+        };
+        let _ = tray.set_tooltip(Some(tip));
+        let sig = items.iter().map(|i| i.key.as_str()).collect::<Vec<_>>().join("|");
+        let mut last = LAB_MENU_SIG.lock().unwrap();
+        if *last != sig {
+            if let Ok(menu) = build_tray_menu(app, &items) {
+                let _ = tray.set_menu(Some(menu));
+                *last = sig;
+            }
+        }
+    }
 }
 
 /// Last unread-email count seen by the badge poll (-1 = no baseline yet).
@@ -900,27 +1025,25 @@ fn main() {
             }
 
             // --- System tray ---
-            let menu = Menu::with_items(app, &[
-                &MenuItem::with_id(app, "email", "Email", true, None::<&str>)?,
-                &MenuItem::with_id(app, "chat", "Team Chat", true, None::<&str>)?,
-                &MenuItem::with_id(app, "docs", "Evolve Docs", true, None::<&str>)?,
-                &MenuItem::with_id(app, "va", "VA Assistant", true, None::<&str>)?,
-                &PredefinedMenuItem::separator(app)?,
-                &MenuItem::with_id(app, "dashboard", "Dashboard", true, None::<&str>)?,
-                &MenuItem::with_id(app, "crm", "CRM Contacts", true, None::<&str>)?,
-                &MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?,
-                &MenuItem::with_id(app, "books", "Books", true, None::<&str>)?,
-                &PredefinedMenuItem::separator(app)?,
-                &MenuItem::with_id(app, "clear_session", "Clear Session & Login", true, None::<&str>)?,
-                &MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?,
-            ])?;
+            let menu = build_tray_menu(&app.handle().clone(), &[])?;
 
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .tooltip("EvolveApp")
                 .on_menu_event(|app, event| {
+                    // "lab:<runner uuid>:<tab uuid>" = a Lab tab that needs you (ids are checked).
+                    if let Some(rest) = event.id.as_ref().strip_prefix("lab:") {
+                        let mut parts = rest.splitn(2, ':');
+                        let (r, t) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+                        if is_uuid(r) && is_uuid(t) {
+                            nav_content(app, &format!("{}/admin/lab#runner={}&tab={}", APP_URL, r, t));
+                            if let Some(win) = app.get_window("main") { let _ = win.show(); let _ = win.set_focus(); }
+                        }
+                        return;
+                    }
                     let path = match event.id.as_ref() {
+                        "lab_home" => "/admin/lab",
                         "email" => "/email-manager", "chat" => "/chat", "docs" => "/evolve-docs",
                         "va" => "/workspace/va", "dashboard" => "/dashboard",
                         "crm" => "/crm-marketing/contacts", "calendar" => "/evolvemeet",

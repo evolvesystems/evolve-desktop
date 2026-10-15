@@ -263,11 +263,12 @@ function renderTabs() {
         labelSpan.textContent = tab.label;
         btn.appendChild(labelSpan);
 
-        // Badge for email/chat
-        if (tab.id === 'email' || tab.id === 'chat') {
+        // Badge for email/chat, and for whichever tab opens the Lab (count = Lab tabs that need you)
+        var isLabTab = typeof url === 'string' && /\/admin\/lab(\/|$|#|\?)/.test(url);
+        if (tab.id === 'email' || tab.id === 'chat' || isLabTab) {
             var badge = document.createElement('span');
             badge.className = 'badge';
-            badge.id = 'badge-' + tab.id;
+            badge.id = 'badge-' + (isLabTab ? 'lab' : tab.id);
             btn.appendChild(badge);
         }
 
@@ -500,6 +501,7 @@ if (window.__TAURI_INTERNALS__) {
             var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;
             updateBadge('email', data.unread_emails || 0);
             updateBadge('chat', data.unread_chats || 0);
+            updateBadge('lab', (data.lab && data.lab.needs_you) || 0);
         } catch(e) {}
     });
 
