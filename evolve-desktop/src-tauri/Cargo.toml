@@ -1,6 +1,6 @@
 [package]
 name = "evolve-desktop"
-version = "2.4.19"
+version = "2.4.20"
 description = "EvolveApp - Desktop wrapper for evolvepreneuriq.app"
 authors = ["EvolveApp Team"]
 edition = "2021"
@@ -15,6 +15,7 @@ tauri-plugin-http = "2.2"
 tauri-plugin-deep-link = "2.2"
 tauri-plugin-updater = "2.2"
 tauri-plugin-notification = "2.2"
+tauri-plugin-global-shortcut = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

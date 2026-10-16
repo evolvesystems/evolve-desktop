@@ -2,8 +2,8 @@
   "$schema": "https://schema.tauri.app/config/2.0.0",
   "identifier": "default",
   "description": "Default capabilities for EvolveApp dual-webview architecture",
-  "windows": ["main"],
-  "webviews": ["sidebar", "content", "main"],
+  "windows": ["main", "quick-send"],
+  "webviews": ["sidebar", "content", "main", "quick-send"],
   "remote": {
     "urls": [
       "https://evolvepreneuriq.app/*",

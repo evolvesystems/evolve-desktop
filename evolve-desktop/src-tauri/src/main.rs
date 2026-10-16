@@ -361,6 +361,73 @@ async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> 
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+//  Lab quick-send: a global hotkey (Ctrl+Shift+L, Cmd+Shift+L on a Mac) that opens a small always-on-top
+//  window on the EIQ page /admin/lab/quick-send. Only registered for accounts the server says have Lab
+//  access (the `lab` key of check-notifications), so other users never lose that key combination.
+// ---------------------------------------------------------------------------
+const QUICK_SEND_LABEL: &str = "quick-send";
+static QUICK_SHORTCUT_TRIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static QUICK_SHORTCUT_ON: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn quick_send_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+    #[cfg(target_os = "macos")]
+    let mods = Modifiers::SUPER | Modifiers::SHIFT;
+    #[cfg(not(target_os = "macos"))]
+    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
+    Shortcut::new(Some(mods), Code::KeyL)
+}
+
+/// Register the hotkey once Lab access is confirmed, release it if access goes away (sign-out).
+/// A key combination another program already owns is tried once and then left alone.
+fn sync_quick_send_shortcut(app: &tauri::AppHandle, has_lab: bool) {
+    use std::sync::atomic::Ordering::SeqCst;
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let on = QUICK_SHORTCUT_ON.load(SeqCst);
+    if has_lab && !on && !QUICK_SHORTCUT_TRIED.swap(true, SeqCst) {
+        match app.global_shortcut().register(quick_send_shortcut()) {
+            Ok(_) => QUICK_SHORTCUT_ON.store(true, SeqCst),
+            Err(e) => eprintln!("[quick-send] could not register the hotkey: {}", e),
+        }
+    } else if !has_lab && on {
+        let _ = app.global_shortcut().unregister(quick_send_shortcut());
+        QUICK_SHORTCUT_ON.store(false, SeqCst);
+        QUICK_SHORTCUT_TRIED.store(false, SeqCst);
+    }
+}
+
+fn open_quick_send(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window(QUICK_SEND_LABEL) {
+        let _ = w.show();
+        let _ = w.set_focus();
+        return;
+    }
+    let url = format!("{}/admin/lab/quick-send", APP_URL);
+    if let Ok(parsed) = url.parse() {
+        let _ = tauri::WebviewWindowBuilder::new(app, QUICK_SEND_LABEL, tauri::WebviewUrl::External(parsed))
+            .title("Send to a Lab tab")
+            .inner_size(460.0, 380.0)
+            .resizable(true)
+            .always_on_top(true)
+            .center()
+            .focused(true)
+            .build();
+    }
+}
+
+/// Lets the quick-send page close its own window (Esc, after a send). Refused for any other webview.
+#[tauri::command]
+async fn close_quick_send(app: tauri::AppHandle, webview: tauri::Webview) -> Result<(), String> {
+    if webview.label() != QUICK_SEND_LABEL {
+        return Err("close_quick_send: not allowed from this webview".to_string());
+    }
+    if let Some(w) = app.get_webview_window(QUICK_SEND_LABEL) {
+        w.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Set when the window is focused: the update thread checks for a new version now instead of waiting.
 static UPDATE_CHECK_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Unix seconds of the last focus-triggered request (rate limit: once per 10 minutes).
@@ -459,6 +526,9 @@ fn notify_lab(app: &tauri::AppHandle, badges_json: &str) {
             }
         }
     }
+
+    // The quick-send hotkey exists only while the account has Lab access.
+    sync_quick_send_shortcut(app, root.get("lab").is_some());
 
     // Tray: tooltip always, menu only when the item list changed.
     if let Some(tray) = app.tray_by_id("main") {
@@ -588,6 +658,15 @@ fn main() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        open_quick_send(app);
+                    }
+                })
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             save_cached_tabs,
@@ -607,6 +686,7 @@ fn main() {
             offline_cache::offline_cache_put,
             offline_cache::offline_cache_get,
             offline_cache::offline_cache_clear,
+            close_quick_send,
         ])
         .setup(|app| {
             // Register PendingUpdate state once; mutated in place by both update paths.
