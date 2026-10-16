@@ -472,8 +472,11 @@ async function checkVersion() {
 function tauriListen(eventName, handler) {
     if (!window.__TAURI_INTERNALS__) return;
     var cbId = window.__TAURI_INTERNALS__.transformCallback(handler);
+    // Tauri 2.x requires `target`; without it the listen command is rejected and the sidebar
+    // never receives badge-update / tabs-loaded / content-navigated (this was silently broken).
     window.__TAURI_INTERNALS__.invoke('plugin:event|listen', {
         event: eventName,
+        target: { kind: 'Any' },
         handler: cbId
     }).catch(function(e) {
         console.warn('[sidebar] listen failed for', eventName, e);
