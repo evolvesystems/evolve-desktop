@@ -93,7 +93,7 @@ body::-webkit-scrollbar { width:0; }
 <div id="tab-container"></div>
 <div class="spacer"></div>
 
-<button class="bottom-btn" id="btn-lab" title="Lab (checking...)" style="position:relative">
+<button class="bottom-btn" id="btn-lab" title="Lab" style="position:relative;display:none">
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" style="width:20px;height:20px"><path stroke-linecap="round" stroke-linejoin="round" d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2M8.5 2h7M7 16h10"/></svg>
   <span class="label">Lab</span>
   <span class="badge" id="badge-labbtn"></span>
@@ -533,9 +533,10 @@ function updateLab(lab) {
     updateBadge('labbtn', needs);
     var btn = document.getElementById('btn-lab');
     if (!btn) return;
-    btn.style.opacity = lab ? '1' : '0.45';
-    if (!lab) btn.title = 'Lab: not available for this account';
-    else if (needs > 0) btn.title = 'Lab: ' + needs + (needs === 1 ? ' tab needs you' : ' tabs need you') + (labItems[0] && labItems[0].title ? ' (' + labItems[0].title + ': ' + labItems[0].reason + ')' : '');
+    // The Lab is staff-only: the button exists only for accounts the server sent Lab info for.
+    btn.style.display = lab ? 'flex' : 'none';
+    if (!lab) return;
+    if (needs > 0) btn.title = 'Lab: ' + needs + (needs === 1 ? ' tab needs you' : ' tabs need you') + (labItems[0] && labItems[0].title ? ' (' + labItems[0].title + ': ' + labItems[0].reason + ')' : '');
     else btn.title = 'Lab: nothing needs you right now';
 }
 

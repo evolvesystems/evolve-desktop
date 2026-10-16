@@ -361,6 +361,11 @@ async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> 
     Ok(())
 }
 
+/// Set when the window is focused: the update thread checks for a new version now instead of waiting.
+static UPDATE_CHECK_NOW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Unix seconds of the last focus-triggered request (rate limit: once per 10 minutes).
+static LAST_FOCUS_UPDATE_CHECK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 #[derive(Clone)]
 struct LabItem {
     key: String,
@@ -797,6 +802,19 @@ fn main() {
                             let _ = win.hide();
                         }
                     }
+                    // The window came to the front (from the tray, minimised, another app): ask the update
+                    // thread to check now, at most once per 10 minutes.
+                    tauri::WindowEvent::Focused(true) => {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0);
+                        let last = LAST_FOCUS_UPDATE_CHECK.load(std::sync::atomic::Ordering::SeqCst);
+                        if now.saturating_sub(last) >= 10 * 60 {
+                            LAST_FOCUS_UPDATE_CHECK.store(now, std::sync::atomic::Ordering::SeqCst);
+                            UPDATE_CHECK_NOW.store(true, std::sync::atomic::Ordering::SeqCst);
+                        }
+                    }
                     tauri::WindowEvent::Resized(phys) => {
                         let scale = window_clone.scale_factor().unwrap_or(1.0);
                         let w = phys.width as f64 / scale;
@@ -842,8 +860,10 @@ fn main() {
             }
 
             // --- Auto-update check ---
-            // First check 5s after startup, then every 6 hours while the app
-            // runs. Without the periodic re-check, users who never quit the
+            // First check 5s after startup, then every 30 minutes while the app
+            // runs (and when the window is focused, at most every 10 minutes; was
+            // every 6 hours, which looked like "only offers updates at startup").
+            // Without the periodic re-check, users who never quit the
             // app (= most users) would never see new versions, because Tauri's
             // updater.check() only runs when explicitly called. v2.4.7 made
             // that one-shot-at-startup pattern visible (john@evolvepreneur
@@ -860,13 +880,19 @@ fn main() {
                     let mut last_shown_version: Option<String> = None;
                     let mut first_check = true;
                     loop {
-                        let delay = if first_check {
-                            std::time::Duration::from_secs(5)
-                        } else {
-                            std::time::Duration::from_secs(6 * 60 * 60) // 6 hours
-                        };
+                        // 5 s after startup, then every 30 minutes, or sooner when the window is brought
+                        // back to the front (UPDATE_CHECK_NOW, set by the Focused event below). Sleeps in
+                        // 5 s slices so a focus request is picked up quickly.
+                        let wait_secs: u64 = if first_check { 5 } else { 30 * 60 };
                         first_check = false;
-                        std::thread::sleep(delay);
+                        let mut slept: u64 = 0;
+                        while slept < wait_secs {
+                            std::thread::sleep(std::time::Duration::from_secs(5));
+                            slept += 5;
+                            if UPDATE_CHECK_NOW.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                                break;
+                            }
+                        }
 
                         let handle_inner = handle.clone();
                         let already_shown = last_shown_version.clone();
