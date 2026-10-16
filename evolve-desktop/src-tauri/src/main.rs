@@ -457,10 +457,16 @@ fn notify_lab(app: &tauri::AppHandle, badges_json: &str) {
 
     // Tray: tooltip always, menu only when the item list changed.
     if let Some(tray) = app.tray_by_id("main") {
-        let tip = match needs {
-            0 => "EvolveApp".to_string(),
-            1 => "EvolveApp: 1 Lab tab needs you".to_string(),
-            n => format!("EvolveApp: {} Lab tabs need you", n),
+        // Says what the app knows, so a tooltip that looks "wrong" is self-explaining.
+        let ver = env!("CARGO_PKG_VERSION");
+        let tip = if root.get("lab").is_none() {
+            format!("EvolveApp {} · Lab: not available for this account", ver)
+        } else {
+            match needs {
+                0 => format!("EvolveApp {} · Lab: nothing needs you", ver),
+                1 => format!("EvolveApp {} · Lab: 1 tab needs you", ver),
+                n => format!("EvolveApp {} · Lab: {} tabs need you", ver, n),
+            }
         };
         let _ = tray.set_tooltip(Some(tip));
         let sig = items.iter().map(|i| i.key.as_str()).collect::<Vec<_>>().join("|");
