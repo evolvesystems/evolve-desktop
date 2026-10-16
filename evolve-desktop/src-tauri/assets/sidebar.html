@@ -90,14 +90,15 @@ body::-webkit-scrollbar { width:0; }
 <body>
 
 <div class="logo" id="logo-btn" title="Dashboard">E</div>
-<div id="tab-container"></div>
-<div class="spacer"></div>
-
-<button class="bottom-btn" id="btn-lab" title="Lab" style="position:relative;display:none">
+<!-- Lab button: at the TOP so it is never pushed out of sight when the window is short (the sidebar scrolls with a hidden scrollbar) -->
+<button class="bottom-btn" id="btn-lab" data-top="1" title="Lab" style="position:relative;display:none;margin-bottom:6px;flex-shrink:0;color:rgba(255,255,255,0.75)">
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" style="width:20px;height:20px"><path stroke-linecap="round" stroke-linejoin="round" d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2M8.5 2h7M7 16h10"/></svg>
   <span class="label">Lab</span>
   <span class="badge" id="badge-labbtn"></span>
 </button>
+<div id="tab-container"></div>
+<div class="spacer"></div>
+
 <button class="bottom-btn" id="btn-back" title="Back">&#8592;</button>
 <button class="bottom-btn" id="btn-refresh" title="Refresh">&#8635;</button>
 <button class="bottom-btn" id="btn-copy" title="Copy URL">
@@ -536,6 +537,7 @@ function updateLab(lab) {
     // The Lab is staff-only: the button exists only for accounts the server sent Lab info for.
     btn.style.display = lab ? 'flex' : 'none';
     if (!lab) return;
+    btn.style.color = needs > 0 ? '#f59e0b' : 'rgba(255,255,255,0.75)'; // amber while something needs you
     if (needs > 0) btn.title = 'Lab: ' + needs + (needs === 1 ? ' tab needs you' : ' tabs need you') + (labItems[0] && labItems[0].title ? ' (' + labItems[0].title + ': ' + labItems[0].reason + ')' : '');
     else btn.title = 'Lab: nothing needs you right now';
 }
