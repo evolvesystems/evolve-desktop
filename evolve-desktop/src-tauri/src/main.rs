@@ -16,6 +16,7 @@ use tauri::{
 };
 use tauri_plugin_updater::UpdaterExt;
 use std::fs;
+mod diag;
 mod offline_cache;
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
@@ -460,6 +461,25 @@ fn str_of(v: &serde_json::Value, k: &str) -> String {
     v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
 }
 
+/// `host/path` of a page address for the log: never the query string or fragment (they can carry tokens or text).
+fn host_path(url: &tauri::Url) -> String {
+    format!("{}{}", url.host_str().unwrap_or("?"), url.path())
+}
+
+/// Open the folder holding evolveapp.log in the system file manager (tray: "Open log folder").
+fn open_log_folder() {
+    let Some(dir) = diag::log_dir() else { return };
+    #[cfg(target_os = "windows")]
+    let opener = "explorer";
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let opener = "xdg-open";
+    if let Err(e) = std::process::Command::new(opener).arg(&dir).spawn() {
+        diag::log(&format!("could not open the log folder: {}", e));
+    }
+}
+
 /// Tray menu: Lab tabs that need you first (click opens that tab), then the usual shortcuts.
 fn build_tray_menu(app: &tauri::AppHandle, lab: &[LabItem]) -> tauri::Result<Menu<tauri::Wry>> {
     let menu = Menu::new(app)?;
@@ -481,6 +501,7 @@ fn build_tray_menu(app: &tauri::AppHandle, lab: &[LabItem]) -> tauri::Result<Men
     menu.append(&MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "books", "Books", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "open_logs", "Open log folder (for support)", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "clear_session", "Clear Session & Login", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?)?;
     Ok(menu)
@@ -492,6 +513,7 @@ fn build_tray_menu(app: &tauri::AppHandle, lab: &[LabItem]) -> tauri::Result<Men
 /// so "open that tab" is the tray menu entry.
 fn notify_lab(app: &tauri::AppHandle, badges_json: &str) {
     use tauri_plugin_notification::NotificationExt;
+    diag::crumb("badge poll received");
     let root: serde_json::Value = match serde_json::from_str(badges_json) { Ok(v) => v, Err(_) => return };
     let (needs, items): (i64, Vec<LabItem>) = match root.get("lab") {
         Some(lab) => (
@@ -515,6 +537,8 @@ fn notify_lab(app: &tauri::AppHandle, badges_json: &str) {
         (first, fresh)
     };
     if !first && !fresh.is_empty() {
+        diag::log(&format!("showing {} Lab notification(s)", fresh.len()));
+        let notify_started = std::time::Instant::now();
         if fresh.len() > 3 {
             let _ = app.notification().builder().title("EvolveApp Lab").body(format!("{} Lab tabs need you", fresh.len())).show();
         } else {
@@ -524,6 +548,9 @@ fn notify_lab(app: &tauri::AppHandle, badges_json: &str) {
                     .body(short(&it.reason, 120))
                     .show();
             }
+        }
+        if notify_started.elapsed().as_millis() >= 1000 {
+            diag::log(&format!("SLOW notification took {} ms", notify_started.elapsed().as_millis()));
         }
     }
 
@@ -689,6 +716,16 @@ fn main() {
             close_quick_send,
         ])
         .setup(|app| {
+            // Log file + freeze watchdog first, so even a stuck start-up leaves a trace (docs: src/diag.rs).
+            // Folder: macOS ~/Library/Logs/com.evolveapp.desktop, Windows %LOCALAPPDATA%\com.evolveapp.desktop\logs, Linux ~/.local/share/com.evolveapp.desktop/logs.
+            let log_dir = app.path().app_log_dir().unwrap_or_else(|_| std::env::temp_dir().join("evolveapp-logs"));
+            diag::init(log_dir);
+            diag::log(&format!("start v{} {} {}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH));
+            {
+                let h = app.handle().clone();
+                diag::start_watchdog(move |job| { let _ = h.run_on_main_thread(job); });
+            }
+
             // Register PendingUpdate state once; mutated in place by both update paths.
             // manage() panics on a second call for the same type, so NEVER call it again.
             app.manage(PendingUpdate(std::sync::Mutex::new(None)));
@@ -764,11 +801,13 @@ fn main() {
                 match payload.event() {
                     PageLoadEvent::Started => {
                         println!("[page-load] Started: {}", url_str);
+                        diag::crumb(&format!("page-load started {}", host_path(payload.url())));
                         emit_sidebar(&app_handle, "content-loading", true);
                         return;
                     }
                     PageLoadEvent::Finished => {
                         println!("[page-load] Finished: {}", url_str);
+                        diag::crumb(&format!("page-load finished {}", host_path(payload.url())));
                         emit_sidebar(&app_handle, "content-loaded", true);
                     }
                     _ => return,
@@ -884,7 +923,9 @@ fn main() {
                     }
                     // The window came to the front (from the tray, minimised, another app): ask the update
                     // thread to check now, at most once per 10 minutes.
+                    tauri::WindowEvent::Focused(false) => diag::crumb("window lost focus"),
                     tauri::WindowEvent::Focused(true) => {
+                        diag::crumb("window focused");
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_secs())
@@ -976,6 +1017,8 @@ fn main() {
 
                         let handle_inner = handle.clone();
                         let already_shown = last_shown_version.clone();
+                        diag::crumb("update check started");
+                        let update_started = std::time::Instant::now();
                         let result: Option<String> = tauri::async_runtime::block_on(async move {
                             let updater = match handle_inner.updater() {
                                 Ok(u) => u,
@@ -1062,6 +1105,7 @@ fn main() {
                                 _ => None,
                             }
                         });
+                        diag::log(&format!("update check finished in {} ms: {}", update_started.elapsed().as_millis(), result.as_deref().unwrap_or("nothing new to show")));
                         if let Some(v) = result {
                             last_shown_version = Some(v);
                         }
@@ -1162,6 +1206,7 @@ fn main() {
                         "books" => "/books/my-books",
                         "clear_session" => "/tenant/reset-session",
                         "quit" => { app.exit(0); return; }
+                        "open_logs" => { open_log_folder(); return; }
                         _ => return,
                     };
                     nav_content(app, &format!("{}{}", APP_URL, path));
