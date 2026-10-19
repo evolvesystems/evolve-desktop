@@ -17,6 +17,7 @@ use tauri::{
 use tauri_plugin_updater::UpdaterExt;
 use std::fs;
 mod diag;
+mod update_error;
 mod offline_cache;
 
 const APP_URL: &str = "https://evolvepreneuriq.app";
@@ -248,8 +249,15 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<(), String> {
     document.getElementById('evolve-update-later').style.display = 'none';
     document.getElementById('evolve-update-progress').style.display = 'block';
     o.onclick = null;
-    window.__TAURI_INTERNALS__.invoke('install_update').catch(function() {{
-      document.getElementById('evolve-update-status').textContent = 'Download failed — check your connection and try again';
+    window.__TAURI_INTERNALS__.invoke('install_update').catch(function(err) {{
+      var em = String(err || ''); var ek = em.split('|')[0];
+      var texts = {{
+        network: 'Could not download the update — check your internet connection and try again.',
+        signature: 'The update failed its security check. Download the app again from evolvepreneuriq.app/download.',
+        install: 'The update downloaded but could not be installed. On a Mac, make sure EvolveApp is in the Applications folder (not running from the disk image or Downloads). Details are in the log (tray menu, Open log folder).',
+        consumed: 'The update was already used — press Try Again.'
+      }};
+      document.getElementById('evolve-update-status').textContent = texts[ek] || ('Update failed: ' + em.slice(0, 160));
       document.getElementById('evolve-update-install').textContent = 'Try Again';
       document.getElementById('evolve-update-install').style.opacity = '';
       document.getElementById('evolve-update-install').disabled = false;
@@ -294,18 +302,22 @@ struct SidebarExpanded(std::sync::atomic::AtomicBool);
 /// Called when user clicks "Install & Restart" — downloads and installs the update
 #[tauri::command]
 async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use update_error::{classify, encode, Stage};
+
     let update = {
         let state = app.try_state::<PendingUpdate>()
-            .ok_or("No pending update")?;
+            .ok_or_else(|| encode(update_error::Kind::Consumed, "No pending update"))?;
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-        guard.take().ok_or("Update already consumed")?
+        guard.take().ok_or_else(|| encode(update_error::Kind::Consumed, "Update already consumed"))?
     };
+    diag::log(&format!("update: installing {} (current {}, {} {})", update.version, env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH));
 
     let app2 = app.clone();
     let app3 = app.clone();
     let mut downloaded: u64 = 0;
 
-    update.download_and_install(
+    // Download and install are separate steps so the error can say which one failed.
+    let bytes = match update.download(
         move |chunk_len, total_len| {
             downloaded += chunk_len as u64;
             let total_str = match total_len {
@@ -327,7 +339,24 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
                 "document.getElementById('evolve-update-status').textContent='Installing... app will restart';document.getElementById('evolve-update-bar').style.width='100%';"
             );
         },
-    ).await.map_err(|e| e.to_string())?;
+    ).await {
+        Ok(b) => b,
+        Err(e) => {
+            let msg = e.to_string();
+            let kind = classify(Stage::Download, &msg);
+            diag::log(&format!("update: download failed ({}): {}", kind.code(), msg));
+            return Err(encode(kind, &msg));
+        }
+    };
+    diag::log(&format!("update: downloaded {} bytes, installing", bytes.len()));
+
+    if let Err(e) = update.install(bytes) {
+        let msg = e.to_string();
+        let kind = classify(Stage::Install, &msg);
+        diag::log(&format!("update: install failed ({}): {}", kind.code(), msg));
+        return Err(encode(kind, &msg));
+    }
+    diag::log("update: installed, restarting");
 
     // The app should restart automatically after install.
     // If it doesn't (some platforms), force a relaunch:
@@ -1079,8 +1108,15 @@ fn main() {
     document.getElementById('evolve-update-later').style.display = 'none';
     document.getElementById('evolve-update-progress').style.display = 'block';
     o.onclick = null;
-    window.__TAURI_INTERNALS__.invoke('install_update').catch(function() {{
-      document.getElementById('evolve-update-status').textContent = 'Download failed — check your connection and try again';
+    window.__TAURI_INTERNALS__.invoke('install_update').catch(function(err) {{
+      var em = String(err || ''); var ek = em.split('|')[0];
+      var texts = {{
+        network: 'Could not download the update — check your internet connection and try again.',
+        signature: 'The update failed its security check. Download the app again from evolvepreneuriq.app/download.',
+        install: 'The update downloaded but could not be installed. On a Mac, make sure EvolveApp is in the Applications folder (not running from the disk image or Downloads). Details are in the log (tray menu, Open log folder).',
+        consumed: 'The update was already used — press Try Again.'
+      }};
+      document.getElementById('evolve-update-status').textContent = texts[ek] || ('Update failed: ' + em.slice(0, 160));
       document.getElementById('evolve-update-install').textContent = 'Try Again';
       document.getElementById('evolve-update-install').style.opacity = '';
       document.getElementById('evolve-update-install').disabled = false;
