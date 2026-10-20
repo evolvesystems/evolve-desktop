@@ -15,7 +15,8 @@ pub enum Kind {
     Signature,
     /// The app could not replace itself (read-only volume, no permission, running from a disk image).
     Install,
-    /// The update was already used by an earlier click (should no longer happen: it is put back on failure).
+    /// The pending update was already used by an earlier click. It is not put back on failure: "Try Again" re-runs the
+    /// update check, which stores a fresh one.
     Consumed,
     Unknown,
 }
@@ -82,6 +83,38 @@ mod tests {
     fn the_consumed_cases_are_recognised_at_any_stage() {
         assert_eq!(classify(Stage::Download, "Update already consumed"), Kind::Consumed);
         assert_eq!(classify(Stage::Install, "No pending update"), Kind::Consumed);
+    }
+
+    #[test]
+    fn a_download_failure_without_network_words_is_still_called_network_so_the_dialog_always_has_a_hint() {
+        // Known limit: a disk or permission failure while saving the file is reported as a download problem.
+        assert_eq!(classify(Stage::Download, "No such file or directory (os error 2)"), Kind::Network);
+        assert_eq!(classify(Stage::Download, ""), Kind::Network);
+    }
+
+    #[test]
+    fn matching_is_case_insensitive_and_the_signature_wins_over_network_words() {
+        assert_eq!(classify(Stage::Download, "HTTP 200 but SIGNATURE mismatch"), Kind::Signature);
+        assert_eq!(classify(Stage::Install, "Update Already Consumed"), Kind::Consumed);
+    }
+
+    #[test]
+    fn every_kind_has_a_distinct_code_the_dialog_can_key_on() {
+        let codes = [Kind::Network, Kind::Signature, Kind::Install, Kind::Consumed, Kind::Unknown].map(Kind::code);
+        for (i, a) in codes.iter().enumerate() {
+            for b in &codes[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+    }
+
+    #[test]
+    fn a_pipe_or_multibyte_text_in_the_message_cannot_break_the_kind_prefix() {
+        let s = encode(Kind::Network, "a|b — ü 日本語");
+        assert!(s.starts_with("network|"));
+        assert_eq!(s.split('|').next(), Some("network"));
+        let long = encode(Kind::Install, &"日".repeat(500));
+        assert_eq!(long.chars().count(), "install|".len() + 300);
     }
 
     #[test]
