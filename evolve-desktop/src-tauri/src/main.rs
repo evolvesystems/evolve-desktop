@@ -17,6 +17,7 @@ use tauri::{
 use tauri_plugin_updater::UpdaterExt;
 use std::fs;
 mod diag;
+mod poll;
 mod update_error;
 mod offline_cache;
 
@@ -658,6 +659,62 @@ async fn save_tabs_via_content(app: tauri::AppHandle, tabs_json: String) -> Resu
     Ok(())
 }
 
+static POLL: poll::State = poll::State::new();
+
+/// Defines window.__evolveTimedFetch inside an EIQ page (idempotent). Every badge/tabs request goes through it: a 10 s abort (poll::TIMEOUT_MS), the duration and
+/// outcome reported to Rust (`log_poll`) so slow or failed polls reach evolveapp.log and drive the back-off. It returns the parsed JSON, or null on any failure.
+const POLL_HELPER_JS: &str = r#"
+(function() {
+    if (window.__evolveTimedFetch) return;
+    window.__evolveTimedFetch = async function(endpoint, path) {
+        var ctl = new AbortController();
+        var t0 = performance.now();
+        var timer = setTimeout(function() { ctl.abort(); }, 10000);
+        var outcome = 'network', data = null;
+        try {
+            var r = await fetch(path, {credentials: 'include', signal: ctl.signal});
+            if (!r.ok) { outcome = 'http'; }
+            else {
+                try { data = await r.json(); outcome = 'ok'; }
+                catch (e) { outcome = (e && e.name === 'AbortError') ? 'timeout' : 'parse'; }
+            }
+        } catch (e) { outcome = (e && e.name === 'AbortError') ? 'timeout' : 'network'; }
+        clearTimeout(timer);
+        try { window.__TAURI_INTERNALS__.invoke('log_poll', {endpoint: endpoint, ms: Math.round(performance.now() - t0), outcome: outcome}).catch(function() {}); } catch (e) {}
+        return outcome === 'ok' ? data : null;
+    };
+})();
+"#;
+
+/// The 60 s timer poll (one script, run by the Rust timer thread only when poll::State allows it).
+const POLL_TICK_JS: &str = r#"
+(async function() {
+    if (!window.__TAURI_INTERNALS__ || !window.__evolveTimedFetch) return;
+    // Only from an EIQ page: on an external custom-tab page a relative URL would hit that site instead.
+    var h = location.hostname;
+    if (h !== 'evolvepreneuriq.app' && !h.endsWith('.evolvepreneuriq.app')) return;
+    var d = await window.__evolveTimedFetch('check-notifications', '/api/v1/desktop/check-notifications');
+    if (d) window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d)});
+})();
+"#;
+
+/// The page's report of one poll: allow-listed endpoint and outcome, clamped duration. Updates the back-off and logs slow or failed polls (no URLs, no response text).
+#[tauri::command]
+async fn log_poll(webview: tauri::Webview, endpoint: String, ms: i64, outcome: String) -> Result<(), String> {
+    if !offline_cache::from_app_origin(&webview) {
+        return Err("log_poll: not allowed from this page".to_string());
+    }
+    let (Some(endpoint), Some(outcome)) = (poll::sanitize_endpoint(&endpoint), poll::sanitize_outcome(&outcome)) else {
+        return Err("log_poll: unknown endpoint or outcome".to_string());
+    };
+    let ms = poll::clamp_ms(ms);
+    let failures = POLL.finish(poll::now_secs(), outcome == "ok");
+    if poll::is_loggable(ms, outcome) {
+        diag::log(&poll::log_line(endpoint, ms, outcome, failures));
+    }
+    Ok(())
+}
+
 // =====================================================================
 //  MAIN
 // =====================================================================
@@ -743,6 +800,7 @@ fn main() {
             offline_cache::offline_cache_get,
             offline_cache::offline_cache_clear,
             close_quick_send,
+            log_poll,
         ])
         .setup(|app| {
             // Log file + freeze watchdog first, so even a stuck start-up leaves a trace (docs: src/diag.rs).
@@ -876,23 +934,14 @@ fn main() {
 
                 if is_app_page {
                     // Tiny injection: fetch tabs + badges via Tauri commands (not plugin:event|emit)
+                    let _ = webview.eval(POLL_HELPER_JS);
                     let _ = webview.eval(r#"
                         (async function() {
-                            if (!window.__TAURI_INTERNALS__) return;
-                            try {
-                                var r = await fetch('/api/v1/desktop/sidebar/tabs', {credentials:'include'});
-                                if (r.ok) {
-                                    var d = await r.json();
-                                    if (d.tabs) window.__TAURI_INTERNALS__.invoke('relay_tabs_to_sidebar', {tabsJson: JSON.stringify(d.tabs)});
-                                }
-                            } catch(e) {}
-                            try {
-                                var r2 = await fetch('/api/v1/desktop/check-notifications', {credentials:'include'});
-                                if (r2.ok) {
-                                    var d2 = await r2.json();
-                                    window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
-                                }
-                            } catch(e) {}
+                            if (!window.__TAURI_INTERNALS__ || !window.__evolveTimedFetch) return;
+                            var d = await window.__evolveTimedFetch('sidebar-tabs', '/api/v1/desktop/sidebar/tabs');
+                            if (d && d.tabs) window.__TAURI_INTERNALS__.invoke('relay_tabs_to_sidebar', {tabsJson: JSON.stringify(d.tabs)});
+                            var d2 = await window.__evolveTimedFetch('check-notifications', '/api/v1/desktop/check-notifications');
+                            if (d2) window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
                         })();
                     "#);
 
@@ -1159,26 +1208,14 @@ fn main() {
                 let badge_handle = app.handle().clone();
                 std::thread::spawn(move || {
                     loop {
-                        std::thread::sleep(std::time::Duration::from_secs(60));
-                        run_js(&badge_handle, "content", r#"
-(async function() {
-    if (!window.__TAURI_INTERNALS__) return;
-    // Only fetch from the app origin. If the content webview is showing an
-    // external custom-tab page, a relative URL fetch would hit that site's
-    // origin instead of evolvepreneuriq.app. A site that happens to respond
-    // 200 at /api/v1/desktop/check-notifications with parseable JSON could
-    // silently corrupt badge counts.
-    var h = location.hostname;
-    if (h !== 'evolvepreneuriq.app' && !h.endsWith('.evolvepreneuriq.app')) return;
-    try {
-        var r = await fetch('/api/v1/desktop/check-notifications', {credentials:'include'});
-        if (r.ok) {
-            var d = await r.json();
-            window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d)});
-        }
-    } catch(e) {}
-})();
-"#);
+                        std::thread::sleep(std::time::Duration::from_secs(poll::BASE_SECS));
+                        // Never two polls at once, and back off after failures (task 5395): poll::State decides.
+                        if !POLL.try_start(poll::now_secs()) {
+                            diag::crumb("badge poll skipped (previous still running or backing off)");
+                            continue;
+                        }
+                        run_js(&badge_handle, "content", POLL_HELPER_JS);
+                        run_js(&badge_handle, "content", POLL_TICK_JS);
                     }
                 });
             }

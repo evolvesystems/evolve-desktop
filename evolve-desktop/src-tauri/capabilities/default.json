@@ -51,6 +51,7 @@
     "allow-offline-cache-get",
     "allow-offline-cache-clear",
     "allow-close-quick-send",
+    "allow-log-poll",
     "shell:default",
     "http:default"
   ]

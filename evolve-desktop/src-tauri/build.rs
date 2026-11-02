@@ -22,6 +22,7 @@ const COMMANDS: &[&str] = &[
     "offline_cache_get",
     "offline_cache_clear",
     "close_quick_send",
+    "log_poll",
 ]; 
 
 fn main() {

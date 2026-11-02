@@ -24,7 +24,7 @@ fn fnv1a(s: &str) -> u64 {
 
 /// Only the EIQ app's own pages may use the cache. Any other site the content webview
 /// shows (custom tabs) must not be able to read or fill it.
-fn from_app_origin(webview: &tauri::Webview) -> bool {
+pub(crate) fn from_app_origin(webview: &tauri::Webview) -> bool {
     match webview.url() {
         Ok(u) => {
             u.scheme() == "https"
