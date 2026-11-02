@@ -17,6 +17,7 @@ use tauri::{
 use tauri_plugin_updater::UpdaterExt;
 use std::fs;
 mod diag;
+mod phone_url;
 mod poll;
 mod update_error;
 mod offline_cache;
@@ -135,10 +136,38 @@ async fn toggle_sidebar_config(app: tauri::AppHandle, open: bool) -> Result<(), 
 /// Show info modal centered in content webview
 #[tauri::command]
 async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
+    info_modal(&app, false);
+    Ok(())
+}
+
+/// The "Get the phone app" QR code as an inline SVG: black on white, error correction M, quiet zone, at least 256 px. Generated here, offline: no QR service, no request.
+#[tauri::command]
+async fn phone_app_qr(webview: tauri::Webview) -> Result<serde_json::Value, String> {
+    if !offline_cache::from_app_origin(&webview) {
+        return Err("phone_app_qr: not allowed from this page".to_string());
+    }
+    let url = phone_url::PHONE_APP_URL;
+    if !phone_url::is_valid(url) {
+        return Err("phone_app_qr: the configured URL is not an allowed download page".to_string());
+    }
+    let code = qrcode::QrCode::with_error_correction_level(url.as_bytes(), qrcode::EcLevel::M).map_err(|e| e.to_string())?;
+    let svg = code
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(256, 256)
+        .quiet_zone(true)
+        .dark_color(qrcode::render::svg::Color("#000000"))
+        .light_color(qrcode::render::svg::Color("#ffffff"))
+        .build();
+    Ok(serde_json::json!({ "url": url, "svg": svg }))
+}
+
+fn info_modal(app: &tauri::AppHandle, open_qr: bool) {
     let version = env!("CARGO_PKG_VERSION").to_string();
     let js = format!(r##"
 (function() {{
+  var wantQr = {qr};
   if (document.getElementById('evolve-info-modal')) {{
+    if (wantQr) {{ var q = document.getElementById('evolve-info-phone'); if (q && !document.getElementById('evolve-info-qrbox')) q.click(); return; }}
     document.getElementById('evolve-info-modal').remove();
     return;
   }}
@@ -156,6 +185,8 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
     + '</div>'
     + '<button id="evolve-info-check-update" style="width:100%;margin-top:16px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:system-ui;transition:all 0.15s;">Check for Updates</button>'
     + '<button id="evolve-info-download" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:none;background:#3b82f6;color:#fff;font-size:13px;font-weight:500;cursor:pointer;font-family:system-ui;">Open download page</button>'
+    + '<button id="evolve-info-phone" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.7);font-size:13px;cursor:pointer;font-family:system-ui;">Get the phone app (QR code)</button>'
+    + '<div id="evolve-info-phone-slot"></div>'
     + '</div>';
   document.body.appendChild(overlay);
   overlay.onclick = function(e) {{ if (e.target === overlay) overlay.remove(); }};
@@ -184,6 +215,40 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
       errEl.textContent = 'Update check failed — check your connection and try again';
     }});
   }};
+  document.getElementById('evolve-info-phone').onclick = function() {{
+    var slot = document.getElementById('evolve-info-phone-slot');
+    if (document.getElementById('evolve-info-qrbox')) {{ slot.innerHTML = ''; return; }}
+    window.__TAURI_INTERNALS__.invoke('phone_app_qr').then(function(r) {{
+      var box = document.createElement('div');
+      box.id = 'evolve-info-qrbox';
+      box.style.cssText = 'margin-top:16px;text-align:center;';
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#fff;border-radius:12px;padding:12px;display:inline-block;line-height:0;';
+      card.setAttribute('role', 'img');
+      card.setAttribute('aria-label', 'QR code for the phone app download page');
+      card.innerHTML = r.svg;
+      var svg = card.querySelector('svg');
+      if (svg) {{ svg.style.width = '256px'; svg.style.height = '256px'; }}
+      var hint = document.createElement('div');
+      hint.style.cssText = 'font-size:13px;color:rgba(255,255,255,0.8);margin-top:10px;';
+      hint.textContent = 'Scan with your phone camera';
+      var link = document.createElement('div');
+      link.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.5);margin-top:4px;word-break:break-all;';
+      link.textContent = r.url;
+      var copy = document.createElement('button');
+      copy.textContent = 'Copy link';
+      copy.setAttribute('aria-label', 'Copy the download link');
+      copy.style.cssText = 'margin-top:8px;padding:6px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);background:none;color:rgba(255,255,255,0.7);font-size:12px;cursor:pointer;font-family:system-ui;';
+      copy.onclick = function() {{
+        if (navigator.clipboard) {{ navigator.clipboard.writeText(r.url).then(function() {{ copy.textContent = 'Copied'; }}).catch(function() {{}}); }}
+      }};
+      box.appendChild(card); box.appendChild(hint); box.appendChild(link); box.appendChild(copy);
+      slot.appendChild(box);
+    }}).catch(function() {{
+      slot.innerHTML = '<div style="font-size:12px;color:#ef4444;text-align:center;margin-top:8px;">Could not make the QR code</div>';
+    }});
+  }};
+  if (wantQr) {{ document.getElementById('evolve-info-phone').click(); }}
   fetch('https://evolvepreneuriq.app/api/v1/desktop/version').then(function(r){{ return r.json(); }}).then(function(d){{
     var el = document.getElementById('evolve-info-latest');
     if (el && d.version) {{
@@ -196,9 +261,8 @@ async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
     }}
   }}).catch(function(){{}});
 }})();
-"##, ver = version);
-    run_js(&app, "content", &js);
-    Ok(())
+"##, ver = version, qr = if open_qr { "true" } else { "false" });
+    run_js(app, "content", &js);
 }
 
 /// Check for updates using tauri-plugin-updater, show progress in content webview
@@ -531,6 +595,7 @@ fn build_tray_menu(app: &tauri::AppHandle, lab: &[LabItem]) -> tauri::Result<Men
     menu.append(&MenuItem::with_id(app, "calendar", "Calendar", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "books", "Books", true, None::<&str>)?)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
+    menu.append(&MenuItem::with_id(app, "phone_qr", "Get the phone app (QR code)", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "open_logs", "Open log folder (for support)", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "clear_session", "Clear Session & Login", true, None::<&str>)?)?;
     menu.append(&MenuItem::with_id(app, "quit", "Quit EvolveApp", true, None::<&str>)?)?;
@@ -801,6 +866,7 @@ fn main() {
             offline_cache::offline_cache_clear,
             close_quick_send,
             log_poll,
+            phone_app_qr,
         ])
         .setup(|app| {
             // Log file + freeze watchdog first, so even a stuck start-up leaves a trace (docs: src/diag.rs).
@@ -1280,6 +1346,11 @@ fn main() {
                         "clear_session" => "/tenant/reset-session",
                         "quit" => { app.exit(0); return; }
                         "open_logs" => { open_log_folder(); return; }
+                        "phone_qr" => {
+                            if let Some(win) = app.get_window("main") { let _ = win.show(); let _ = win.set_focus(); }
+                            info_modal(app, true);
+                            return;
+                        }
                         _ => return,
                     };
                     nav_content(app, &format!("{}{}", APP_URL, path));

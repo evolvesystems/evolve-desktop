@@ -52,6 +52,7 @@
     "allow-offline-cache-clear",
     "allow-close-quick-send",
     "allow-log-poll",
+    "allow-phone-app-qr",
     "shell:default",
     "http:default"
   ]
