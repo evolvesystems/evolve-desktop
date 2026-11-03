@@ -18,6 +18,8 @@ use tauri_plugin_updater::UpdaterExt;
 use std::fs;
 mod diag;
 mod phone_url;
+mod memlog;
+mod park;
 mod poll;
 mod update_error;
 mod offline_cache;
@@ -44,6 +46,8 @@ fn emit_sidebar<S: serde::Serialize + Clone>(app: &tauri::AppHandle, event: &str
 }
 
 fn nav_content(app: &tauri::AppHandle, url: &str) {
+    // A deep link or tray item replaces any parked page: do not reload the old one over it (task 5469).
+    PARK.forget();
     // Use JSON encoding instead of manual escaping. serde_json::to_string
     // produces a double-quoted JS string literal with all special characters
     // properly escaped, including backslashes. Manual replace('\'', "\\'") is
@@ -724,6 +728,7 @@ async fn save_tabs_via_content(app: tauri::AppHandle, tabs_json: String) -> Resu
     Ok(())
 }
 
+static PARK: park::State = park::State::new();
 static POLL: poll::State = poll::State::new();
 
 /// Defines window.__evolveTimedFetch inside an EIQ page (idempotent). Every badge/tabs request goes through it: a 10 s abort (poll::TIMEOUT_MS), the duration and
@@ -783,6 +788,31 @@ async fn log_poll(webview: tauri::Webview, endpoint: String, ms: i64, outcome: S
 // =====================================================================
 //  MAIN
 // =====================================================================
+
+/// Sends the content view to the tiny parked page when the window has been hidden long enough (task 5469). Skipped when media is playing in the page (a call or a video).
+fn park_content(app: &tauri::AppHandle) {
+    let Some(url) = app.get_webview("content").and_then(|w| w.url().ok()).map(|u| u.to_string()) else { return };
+    if !park::is_restorable(&url) {
+        return;
+    }
+    let Ok(target) = serde_json::to_string(park::PARK_URL) else { return };
+    PARK.parked(url);
+    diag::log("content parked (window hidden 10+ minutes)");
+    run_js(app, "content", &format!(
+        "(function(){{ var p=false; try{{ document.querySelectorAll('audio,video').forEach(function(m){{ if(!m.paused&&!m.ended) p=true; }}); }}catch(e){{}} if(!p) window.location.replace({target}); }})();"
+    ));
+}
+
+/// The window is visible again: bring the saved page back if the content view is still on the parked page.
+fn restore_parked(app: &tauri::AppHandle) {
+    let on_park = app.get_webview("content").and_then(|w| w.url().ok()).map(|u| park::is_park_url(u.as_str())).unwrap_or(false);
+    if let Some(url) = PARK.take_saved() {
+        if on_park {
+            diag::log("content restored (window shown)");
+            nav_content(app, &url);
+        }
+    }
+}
 
 fn main() {
     tauri::Builder::default()
@@ -980,6 +1010,11 @@ fn main() {
                     return;
                 }
 
+                // The parked page (task 5469) loads while the window is hidden: it must not show the window or touch the sidebar.
+                if park::is_park_url(&url_str) {
+                    return;
+                }
+
                 // Ensure the window is visible (harmless if already shown)
                 if let Some(win) = app_handle.get_window("main") {
                     let _ = win.show();
@@ -1061,6 +1096,7 @@ fn main() {
                     // app.exit(0) which bypasses CloseRequested and actually quits.
                     tauri::WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
+                        PARK.hidden(poll::now_secs());
                         if let Some(win) = app_handle2.get_window("main") {
                             let _ = win.hide();
                         }
@@ -1070,6 +1106,8 @@ fn main() {
                     tauri::WindowEvent::Focused(false) => diag::crumb("window lost focus"),
                     tauri::WindowEvent::Focused(true) => {
                         diag::crumb("window focused");
+                        PARK.shown();
+                        restore_parked(&app_handle2);
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
                             .map(|d| d.as_secs())
@@ -1275,6 +1313,11 @@ fn main() {
                 std::thread::spawn(move || {
                     loop {
                         std::thread::sleep(std::time::Duration::from_secs(poll::BASE_SECS));
+                        if PARK.due(poll::now_secs()) {
+                            park_content(&badge_handle);
+                        } else if !PARK.is_hidden() {
+                            restore_parked(&badge_handle);
+                        }
                         // Never two polls at once, and back off after failures (task 5395): poll::State decides.
                         if !POLL.try_start(poll::now_secs()) {
                             diag::crumb("badge poll skipped (previous still running or backing off)");
@@ -1283,6 +1326,16 @@ fn main() {
                         run_js(&badge_handle, "content", POLL_HELPER_JS);
                         run_js(&badge_handle, "content", POLL_TICK_JS);
                     }
+                });
+            }
+
+            // --- Memory sample, once a minute, into evolveapp.log (task 5469) ---
+            {
+                let mem_handle = app.handle().clone();
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_secs(memlog::EVERY_SECS));
+                    let parked = mem_handle.get_webview("content").and_then(|w| w.url().ok()).map(|u| park::is_park_url(u.as_str())).unwrap_or(false);
+                    diag::log(&memlog::log_line(memlog::app_rss_kb(), memlog::webview_procs(), parked, PARK.is_hidden()));
                 });
             }
 
