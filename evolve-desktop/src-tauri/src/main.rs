@@ -137,6 +137,32 @@ async fn toggle_sidebar_config(app: tauri::AppHandle, open: bool) -> Result<(), 
     Ok(())
 }
 
+/// Puts the sidebar and content webviews back to exactly the window's size (task: the Lab filled only the top half of the window on John's Windows laptop).
+/// Called from every event that can change the window's real size or scale, not only Resized, and it logs once whenever the content view had drifted from the window.
+fn sync_layout(app: &tauri::AppHandle) {
+    let Some(win) = app.get_window("main") else { return };
+    let (Ok(phys), scale) = (win.inner_size(), win.scale_factor().unwrap_or(1.0)) else { return };
+    if phys.width == 0 || phys.height == 0 {
+        return; // minimised: Windows reports a 0 x 0 client area
+    }
+    let w = phys.width as f64 / scale;
+    let h = phys.height as f64 / scale;
+    let sw = if app.state::<SidebarExpanded>().0.load(std::sync::atomic::Ordering::SeqCst) { SIDEBAR_EXPANDED } else { SIDEBAR_WIDTH };
+    if let Some(ct) = app.get_webview("content") {
+        if let Ok(cs) = ct.size() {
+            let drift = (cs.height as i64 - phys.height as i64).abs();
+            if drift > 2 {
+                diag::log(&format!("layout drift: window {}x{} px scale {:.2}, content view {}x{} px: resized", phys.width, phys.height, scale, cs.width, cs.height));
+            }
+        }
+        let _ = ct.set_position(tauri::LogicalPosition::new(sw, 0.0));
+        let _ = ct.set_size(tauri::LogicalSize::new((w - sw).max(100.0), h));
+    }
+    if let Some(sb) = app.get_webview("sidebar") {
+        let _ = sb.set_size(tauri::LogicalSize::new(sw, h));
+    }
+}
+
 /// Show info modal centered in content webview
 #[tauri::command]
 async fn show_info_modal(app: tauri::AppHandle) -> Result<(), String> {
@@ -992,6 +1018,7 @@ fn main() {
                         println!("[page-load] Finished: {}", url_str);
                         diag::crumb(&format!("page-load finished {}", host_path(payload.url())));
                         emit_sidebar(&app_handle, "content-loaded", true);
+                        sync_layout(&app_handle);
                     }
                     _ => return,
                 }
@@ -1106,6 +1133,7 @@ fn main() {
                     tauri::WindowEvent::Focused(false) => diag::crumb("window lost focus"),
                     tauri::WindowEvent::Focused(true) => {
                         diag::crumb("window focused");
+                        sync_layout(&app_handle2);
                         PARK.shown();
                         restore_parked(&app_handle2);
                         let now = std::time::SystemTime::now()
@@ -1118,21 +1146,7 @@ fn main() {
                             UPDATE_CHECK_NOW.store(true, std::sync::atomic::Ordering::SeqCst);
                         }
                     }
-                    tauri::WindowEvent::Resized(phys) => {
-                        let scale = window_clone.scale_factor().unwrap_or(1.0);
-                        let w = phys.width as f64 / scale;
-                        let h = phys.height as f64 / scale;
-                        let is_expanded = app_handle2.state::<SidebarExpanded>()
-                            .0.load(std::sync::atomic::Ordering::SeqCst);
-                        let sw = if is_expanded { SIDEBAR_EXPANDED } else { SIDEBAR_WIDTH };
-                        if let Some(sb) = app_handle2.get_webview("sidebar") {
-                            let _ = sb.set_size(tauri::LogicalSize::new(sw, h));
-                        }
-                        if let Some(ct) = app_handle2.get_webview("content") {
-                            let _ = ct.set_position(tauri::LogicalPosition::new(sw, 0.0));
-                            let _ = ct.set_size(tauri::LogicalSize::new((w - sw).max(100.0), h));
-                        }
-                    }
+                    tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. } => sync_layout(&app_handle2),
                     _ => {}
                 }
             });
