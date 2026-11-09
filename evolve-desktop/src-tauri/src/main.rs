@@ -21,6 +21,7 @@ mod phone_url;
 mod memlog;
 mod park;
 mod poll;
+mod timing;
 mod update_error;
 mod offline_cache;
 
@@ -473,6 +474,7 @@ async fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), Str
 /// Called from content webview JS to relay tabs data to sidebar
 #[tauri::command]
 async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Result<(), String> {
+    TIMING.tabs_answered(poll::now_secs());
     emit_sidebar(&app, "tabs-loaded", &tabs_json);
     Ok(())
 }
@@ -755,6 +757,48 @@ async fn save_tabs_via_content(app: tauri::AppHandle, tabs_json: String) -> Resu
 }
 
 static PARK: park::State = park::State::new();
+static TIMING: timing::State = timing::State::new();
+static LAUNCHED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+/// Milliseconds since the app launched (the first call starts the clock; main() makes it the very first thing).
+fn since_launch_ms() -> u64 {
+    LAUNCHED.get_or_init(std::time::Instant::now).elapsed().as_millis() as u64
+}
+
+/// The two requests injected after an EIQ page is ready (task: slow Lab). Sent after a short delay so they do not compete with the page's own start-up requests; the sidebar tabs
+/// are left out when they were answered in the last minute. Times the whole thing and reports it through log_page_timing.
+const INJECT_TEMPLATE_JS: &str = r#"
+(function() {
+    setTimeout(async function() {
+        if (!window.__TAURI_INTERNALS__ || !window.__evolveTimedFetch) return;
+        var t0 = Date.now();
+        if (__WANT_TABS__) {
+            var d = await window.__evolveTimedFetch('sidebar-tabs', '/api/v1/desktop/sidebar/tabs');
+            if (d && d.tabs) window.__TAURI_INTERNALS__.invoke('relay_tabs_to_sidebar', {tabsJson: JSON.stringify(d.tabs)});
+        }
+        var d2 = await window.__evolveTimedFetch('check-notifications', '/api/v1/desktop/check-notifications');
+        if (d2) window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
+        window.__TAURI_INTERNALS__.invoke('log_page_timing', {ms: Date.now() - t0, lab: __IS_LAB__}).catch(function() {});
+    }, __DELAY_MS__);
+})();
+"#;
+
+fn inject_script(want_tabs: bool, is_lab: bool) -> String {
+    INJECT_TEMPLATE_JS
+        .replace("__WANT_TABS__", if want_tabs { "true" } else { "false" })
+        .replace("__IS_LAB__", if is_lab { "true" } else { "false" })
+        .replace("__DELAY_MS__", &timing::INJECT_DELAY_MS.to_string())
+}
+
+/// The page's report of how long the injected requests took. Origin-guarded; the number is clamped; the line holds times only (no URLs, ids or personal data).
+#[tauri::command]
+async fn log_page_timing(webview: tauri::Webview, ms: i64, lab: bool) -> Result<(), String> {
+    if !offline_cache::from_app_origin(&webview) {
+        return Err("log_page_timing: not allowed from this page".to_string());
+    }
+    diag::log(&TIMING.finish(ms, lab));
+    Ok(())
+}
 static POLL: poll::State = poll::State::new();
 
 /// Defines window.__evolveTimedFetch inside an EIQ page (idempotent). Every badge/tabs request goes through it: a 10 s abort (poll::TIMEOUT_MS), the duration and
@@ -835,12 +879,14 @@ fn restore_parked(app: &tauri::AppHandle) {
     if let Some(url) = PARK.take_saved() {
         if on_park {
             diag::log("content restored (window shown)");
+            TIMING.mark_after_park();
             nav_content(app, &url);
         }
     }
 }
 
 fn main() {
+    let _ = since_launch_ms();
     tauri::Builder::default()
         .register_uri_scheme_protocol("evolve", |_ctx, request| {
             let path = request.uri().path().trim_start_matches('/');
@@ -918,6 +964,7 @@ fn main() {
             relay_badges_to_sidebar,
             open_external_url,
             offline_cache::offline_cache_put,
+            log_page_timing,
             offline_cache::offline_cache_get,
             offline_cache::offline_cache_clear,
             close_quick_send,
@@ -950,6 +997,7 @@ fn main() {
                 .min_inner_size(1024.0, 600.0)
                 .center()
                 .build()?;
+            TIMING.window_open(since_launch_ms());
 
             // Safety net: if we're still on the splash after 8 s (offline startup,
             // DNS failure, or eval error), force a navigation to the real app.
@@ -1012,6 +1060,7 @@ fn main() {
                         println!("[page-load] Started: {}", url_str);
                         diag::crumb(&format!("page-load started {}", host_path(payload.url())));
                         emit_sidebar(&app_handle, "content-loading", true);
+                        TIMING.page_started(since_launch_ms());
                         return;
                     }
                     PageLoadEvent::Finished => {
@@ -1063,15 +1112,9 @@ fn main() {
                 if is_app_page {
                     // Tiny injection: fetch tabs + badges via Tauri commands (not plugin:event|emit)
                     let _ = webview.eval(POLL_HELPER_JS);
-                    let _ = webview.eval(r#"
-                        (async function() {
-                            if (!window.__TAURI_INTERNALS__ || !window.__evolveTimedFetch) return;
-                            var d = await window.__evolveTimedFetch('sidebar-tabs', '/api/v1/desktop/sidebar/tabs');
-                            if (d && d.tabs) window.__TAURI_INTERNALS__.invoke('relay_tabs_to_sidebar', {tabsJson: JSON.stringify(d.tabs)});
-                            var d2 = await window.__evolveTimedFetch('check-notifications', '/api/v1/desktop/check-notifications');
-                            if (d2) window.__TAURI_INTERNALS__.invoke('relay_badges_to_sidebar', {badgesJson: JSON.stringify(d2)});
-                        })();
-                    "#);
+                    TIMING.page_ready(since_launch_ms());
+                    let want_tabs = TIMING.tabs_due(poll::now_secs());
+                    let _ = webview.eval(&inject_script(want_tabs, timing::is_lab_path(payload.url().path())));
 
                     // External-link interceptor: open target="_blank" and cross-origin
                     // links in the system browser. Without this, WKWebView/WebView2

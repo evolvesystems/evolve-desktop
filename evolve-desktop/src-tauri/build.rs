@@ -24,6 +24,7 @@ const COMMANDS: &[&str] = &[
     "close_quick_send",
     "log_poll",
     "phone_app_qr",
+    "log_page_timing",
 ]; 
 
 fn main() {

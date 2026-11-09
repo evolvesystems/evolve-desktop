@@ -53,6 +53,8 @@
     "allow-close-quick-send",
     "allow-log-poll",
     "allow-phone-app-qr",
+    "allow-log-page-timing",
+    "allow-log-page-timing",
     "shell:default",
     "http:default"
   ]
