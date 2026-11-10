@@ -5,7 +5,7 @@
 //! about 6 connections per host), so the page stalled while the window frame still answered. The poll runs inside the page, so Rust cannot time it itself: the page
 //! reports each result through the `log_poll` command and this module decides what to log and when the next poll is due.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// The page aborts a request after this long.
 pub const TIMEOUT_MS: u64 = 10_000;
@@ -19,7 +19,7 @@ pub const STALE_SECS: u64 = 20;
 pub const SLOW_MS: u64 = 3_000;
 
 pub const ENDPOINTS: [&str; 2] = ["check-notifications", "sidebar-tabs"];
-pub const OUTCOMES: [&str; 5] = ["ok", "timeout", "http", "network", "parse"];
+pub const OUTCOMES: [&str; 6] = ["ok", "timeout", "http", "network", "parse", "unauthorized"];
 
 /// Seconds to wait before the next poll after `failures` failures in a row: 60, 120, 240, 480, then 600.
 pub fn next_delay_secs(failures: u32) -> u64 {
@@ -50,6 +50,11 @@ pub fn log_line(endpoint: &str, ms: u64, outcome: &str, failures: u32) -> String
     format!("poll {} {} ms {} (failures in a row: {})", endpoint, ms, outcome, failures)
 }
 
+/// Pages where a signed-out person is expected: the app must not push them to the sign-in page again (that would loop).
+pub fn is_sign_in_path(path: &str) -> bool {
+    ["/login", "/2fa", "/forgot", "/reset", "/register", "/logout"].iter().any(|p| path == *p || path.starts_with(&format!("{p}/")) || path.starts_with(&format!("{p}?")))
+}
+
 pub fn now_secs() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
@@ -59,15 +64,20 @@ pub struct State {
     failures: AtomicU32,
     next_at: AtomicU64,
     started_at: AtomicU64,
+    /// The server said 401: the person is signed out. No timer poll runs until a request succeeds again (EVO-BUG-20077).
+    signed_out: AtomicBool,
 }
 
 impl State {
     pub const fn new() -> Self {
-        State { failures: AtomicU32::new(0), next_at: AtomicU64::new(0), started_at: AtomicU64::new(0) }
+        State { failures: AtomicU32::new(0), next_at: AtomicU64::new(0), started_at: AtomicU64::new(0), signed_out: AtomicBool::new(false) }
     }
 
     /// May a poll start now? No while the previous one is still running (unless it is stale) or while backing off. Marks it started when it may.
     pub fn try_start(&self, now: u64) -> bool {
+        if self.signed_out.load(Ordering::SeqCst) {
+            return false;
+        }
         let started = self.started_at.load(Ordering::SeqCst);
         if started != 0 && now.saturating_sub(started) < STALE_SECS {
             return false;
@@ -83,6 +93,7 @@ impl State {
     pub fn finish(&self, now: u64, ok: bool) -> u32 {
         self.started_at.store(0, Ordering::SeqCst);
         if ok {
+            self.signed_out.store(false, Ordering::SeqCst);
             self.failures.store(0, Ordering::SeqCst);
             self.next_at.store(0, Ordering::SeqCst);
             0
@@ -92,6 +103,18 @@ impl State {
             self.next_at.store(now + next_delay_secs(f), Ordering::SeqCst);
             f
         }
+    }
+
+    /// The server answered 401. Stops the timer poll and clears the back-off. Returns true only the FIRST time (so the sign-in page is shown once, not on every report).
+    pub fn sign_out(&self) -> bool {
+        self.started_at.store(0, Ordering::SeqCst);
+        self.failures.store(0, Ordering::SeqCst);
+        self.next_at.store(0, Ordering::SeqCst);
+        !self.signed_out.swap(true, Ordering::SeqCst)
+    }
+
+    pub fn is_signed_out(&self) -> bool {
+        self.signed_out.load(Ordering::SeqCst)
     }
 
     pub fn failures(&self) -> u32 {
@@ -210,5 +233,55 @@ mod tests {
         // clock stepped back: saturating subtraction keeps "still running" until it is stale by the clock
         assert!(!s.try_start(100));
         assert!(s.try_start(5020));
+    }
+
+    #[test]
+    fn a_401_stops_the_timer_poll_until_a_request_succeeds_again() {
+        let st = State::new();
+        assert!(st.try_start(1000));
+        assert!(st.sign_out(), "first 401: show sign-in once");
+        assert!(st.is_signed_out());
+        for t in [1060, 1120, 5000, 90_000] {
+            assert!(!st.try_start(t), "no poll while signed out (t={t})");
+        }
+        st.finish(100_000, true);
+        assert!(!st.is_signed_out(), "a successful request proves sign-in");
+        assert!(st.try_start(100_001));
+    }
+
+    #[test]
+    fn only_the_first_401_asks_for_the_sign_in_page() {
+        let st = State::new();
+        assert!(st.sign_out());
+        assert!(!st.sign_out());
+        assert!(!st.sign_out());
+        st.finish(10, true);
+        assert!(st.sign_out(), "after signing in and out again it is a new first");
+    }
+
+    #[test]
+    fn a_401_is_not_backed_off_it_is_stopped_and_a_failure_in_a_row_is_not_counted() {
+        let st = State::new();
+        st.finish(0, false);
+        st.finish(0, false);
+        assert_eq!(st.failures(), 2);
+        st.sign_out();
+        assert_eq!(st.failures(), 0);
+    }
+
+    #[test]
+    fn unauthorized_is_an_accepted_outcome_and_is_logged() {
+        assert_eq!(sanitize_outcome("unauthorized"), Some("unauthorized"));
+        assert!(is_loggable(10, "unauthorized"));
+    }
+
+    #[test]
+    fn the_sign_in_pages_are_recognised_by_path_only() {
+        for p in ["/login", "/login/", "/login?next=/crm", "/2fa", "/2fa/check", "/forgot", "/reset/abc", "/register", "/logout"] {
+            assert!(is_sign_in_path(p), "{p}");
+        }
+        for p in ["/", "/crm", "/loginfo", "/admin/login-history", "/dashboard"] {
+            assert!(!is_sign_in_path(p), "{p}");
+        }
     }
 }

@@ -813,7 +813,8 @@ const POLL_HELPER_JS: &str = r#"
         var outcome = 'network', data = null;
         try {
             var r = await fetch(path, {credentials: 'include', signal: ctl.signal});
-            if (!r.ok) { outcome = 'http'; }
+            if (r.status === 401 || (r.redirected && /\/login/.test(r.url))) { outcome = 'unauthorized'; }
+            else if (!r.ok) { outcome = 'http'; }
             else {
                 try { data = await r.json(); outcome = 'ok'; }
                 catch (e) { outcome = (e && e.name === 'AbortError') ? 'timeout' : 'parse'; }
@@ -840,7 +841,7 @@ const POLL_TICK_JS: &str = r#"
 
 /// The page's report of one poll: allow-listed endpoint and outcome, clamped duration. Updates the back-off and logs slow or failed polls (no URLs, no response text).
 #[tauri::command]
-async fn log_poll(webview: tauri::Webview, endpoint: String, ms: i64, outcome: String) -> Result<(), String> {
+async fn log_poll(app: tauri::AppHandle, webview: tauri::Webview, endpoint: String, ms: i64, outcome: String) -> Result<(), String> {
     if !offline_cache::from_app_origin(&webview) {
         return Err("log_poll: not allowed from this page".to_string());
     }
@@ -848,6 +849,17 @@ async fn log_poll(webview: tauri::Webview, endpoint: String, ms: i64, outcome: S
         return Err("log_poll: unknown endpoint or outcome".to_string());
     };
     let ms = poll::clamp_ms(ms);
+    if outcome == "unauthorized" {
+        // The server says the session is gone (EVO-BUG-20077): stop polling, show the sign-in page ONCE (never when already on a sign-in page), resume after the next success.
+        if POLL.sign_out() {
+            diag::log(&format!("poll {} unauthorized: polling paused until sign-in", endpoint));
+            let on_sign_in = webview.url().map(|u| poll::is_sign_in_path(u.path())).unwrap_or(false);
+            if !on_sign_in {
+                nav_content(&app, &format!("{}/login", APP_URL));
+            }
+        }
+        return Ok(());
+    }
     let failures = POLL.finish(poll::now_secs(), outcome == "ok");
     if poll::is_loggable(ms, outcome) {
         diag::log(&poll::log_line(endpoint, ms, outcome, failures));
