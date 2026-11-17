@@ -17,6 +17,7 @@ use tauri::{
 use tauri_plugin_updater::UpdaterExt;
 use std::fs;
 mod diag;
+mod hosts;
 mod phone_url;
 mod memlog;
 mod park;
@@ -479,12 +480,23 @@ async fn relay_tabs_to_sidebar(app: tauri::AppHandle, tabs_json: String) -> Resu
     Ok(())
 }
 
+/// 2.4.30: the chat:unread window-message listener, injected on app pages (its own file so its logic is tested under node).
+const CHAT_UNREAD_JS: &str = include_str!("chat_unread.js");
+
 /// Called from content webview JS to relay badge data to sidebar
 #[tauri::command]
 async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> Result<(), String> {
     emit_sidebar(&app, "badge-update", &badges_json);
     notify_on_new_mail(&app, &badges_json);
     notify_lab(&app, &badges_json);
+    Ok(())
+}
+
+/// 2.4.30: the chat page announced its unread total (window message chat:unread, src/chat_unread.js). Moves ONLY the sidebar's chat badge:
+/// the badge-update event carries email and Lab too and would zero them, so this has its own event.
+#[tauri::command]
+async fn relay_chat_unread(app: tauri::AppHandle, total: i64) -> Result<(), String> {
+    emit_sidebar(&app, "chat-unread", hosts::clamp_total(total));
     Ok(())
 }
 
@@ -974,6 +986,7 @@ fn main() {
             save_tabs_via_content,
             relay_tabs_to_sidebar,
             relay_badges_to_sidebar,
+            relay_chat_unread,
             open_external_url,
             offline_cache::offline_cache_put,
             log_page_timing,
@@ -1118,10 +1131,13 @@ fn main() {
                 // and must not receive the external-link interceptor (it would catch
                 // all clicks on the external site and open them in the system browser,
                 // making the site completely non-navigable inside the content webview).
-                let is_app_page = url_str.starts_with("https://evolvepreneuriq.app")
-                    || url_str.starts_with("http://evolvepreneuriq.app");
+                // 2.4.30: the HOST must match exactly (src/hosts.rs); the messenger host counts too while hosts::MESSAGER_HOST_PAGES is on.
+                let is_app_page = hosts::is_app_page(&url_str);
 
                 if is_app_page {
+                    if hosts::PAGE_UNREAD_LISTENER {
+                        let _ = webview.eval(CHAT_UNREAD_JS);
+                    }
                     // Tiny injection: fetch tabs + badges via Tauri commands (not plugin:event|emit)
                     let _ = webview.eval(POLL_HELPER_JS);
                     TIMING.page_ready(since_launch_ms());

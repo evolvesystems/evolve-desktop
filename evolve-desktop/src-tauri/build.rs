@@ -17,6 +17,7 @@ const COMMANDS: &[&str] = &[
     "save_tabs_via_content",
     "relay_tabs_to_sidebar",
     "relay_badges_to_sidebar",
+    "relay_chat_unread",
     "open_external_url",
     "offline_cache_put",
     "offline_cache_get",

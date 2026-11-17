@@ -514,6 +514,14 @@ if (window.__TAURI_INTERNALS__) {
         } catch(e) {}
     });
 
+    // 2.4.30: the chat page's own unread number (window message chat:unread). Moves the chat badge only; email and Lab keep their poll values.
+    tauriListen('chat-unread', function(event) {
+        try {
+            var n = typeof event.payload === 'number' ? event.payload : parseInt(event.payload, 10);
+            if (isFinite(n) && n >= 0) updateBadge('chat', n);
+        } catch(e) {}
+    });
+
     tauriListen('tabs-loaded', function(event) {
         try {
             var data = typeof event.payload === 'string' ? JSON.parse(event.payload) : event.payload;

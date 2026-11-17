@@ -46,6 +46,7 @@
     "allow-save-tabs-via-content",
     "allow-relay-tabs-to-sidebar",
     "allow-relay-badges-to-sidebar",
+    "allow-relay-chat-unread",
     "allow-open-external-url",
     "allow-offline-cache-put",
     "allow-offline-cache-get",
