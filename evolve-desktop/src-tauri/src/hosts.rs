@@ -10,6 +10,9 @@ pub const MESSAGER_HOST_PAGES: bool = true;
 /// 2.4.30, part (a): listen for the chat page's `chat:unread` message and move the chat badge from it. Inert until the page posts it. Set to false to back it out alone.
 pub const PAGE_UNREAD_LISTENER: bool = true;
 
+/// 2.4.31: one number (chat + mail unread) on the app icon (Windows taskbar overlay, macOS dock, Linux launcher). Set to false to back it out alone.
+pub const TRAY_NUMBER: bool = true;
+
 const MAIN_HOST: &str = "evolvepreneuriq.app";
 const MESSAGER_HOST: &str = "messager.evolvepreneuriq.app";
 
@@ -92,6 +95,7 @@ mod tests {
     fn the_switches_ship_on() {
         assert!(MESSAGER_HOST_PAGES);
         assert!(PAGE_UNREAD_LISTENER);
+        assert!(TRAY_NUMBER);
         assert!(is_app_page("https://messager.evolvepreneuriq.app/"));
     }
 

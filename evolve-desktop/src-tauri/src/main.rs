@@ -16,8 +16,10 @@ use tauri::{
 };
 use tauri_plugin_updater::UpdaterExt;
 use std::fs;
+mod badge;
 mod diag;
 mod hosts;
+mod tray_total;
 mod phone_url;
 mod memlog;
 mod park;
@@ -489,7 +491,38 @@ async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> 
     emit_sidebar(&app, "badge-update", &badges_json);
     notify_on_new_mail(&app, &badges_json);
     notify_lab(&app, &badges_json);
+    // 2.4.31: the same poll answer feeds the one number on the app icon (mail + chat).
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&badges_json) {
+        if let Some(n) = v.get("unread_emails").and_then(|n| n.as_i64()) {
+            MAIL_UNREAD.store(tray_total::clamp(n), std::sync::atomic::Ordering::SeqCst);
+        }
+        if let Some(n) = v.get("unread_chats").and_then(|n| n.as_i64()) {
+            CHAT_UNREAD.store(tray_total::clamp(n), std::sync::atomic::Ordering::SeqCst);
+        }
+        refresh_tray_total(&app);
+    }
     Ok(())
+}
+
+/// 2.4.31: last unread counts seen (-1 = not known yet): chat from the page message or the poll, mail from the poll. Their sum is the number on the app icon.
+static CHAT_UNREAD: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+static MAIL_UNREAD: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(-1);
+
+/// Show chat + mail unread as ONE number on the app icon: Windows gets a drawn overlay on the taskbar button, macOS the dock badge, Linux the launcher count
+/// (platforms that do not support one ignore the call). 0 clears it. Counts only.
+fn refresh_tray_total(app: &tauri::AppHandle) {
+    if !hosts::TRAY_NUMBER {
+        return;
+    }
+    let total = tray_total::total(CHAT_UNREAD.load(std::sync::atomic::Ordering::SeqCst), MAIL_UNREAD.load(std::sync::atomic::Ordering::SeqCst));
+    if let Some(w) = app.get_window("main") {
+        let _ = w.set_badge_count(badge::badge_value(total));
+        #[cfg(target_os = "windows")]
+        {
+            let icon = badge::overlay_rgba(total).map(|px| tauri::image::Image::new_owned(px, badge::SIZE, badge::SIZE));
+            let _ = w.set_overlay_icon(icon);
+        }
+    }
 }
 
 /// 2.4.30: the chat page announced its unread total (window message chat:unread, src/chat_unread.js). Moves ONLY the sidebar's chat badge:
@@ -497,6 +530,8 @@ async fn relay_badges_to_sidebar(app: tauri::AppHandle, badges_json: String) -> 
 #[tauri::command]
 async fn relay_chat_unread(app: tauri::AppHandle, total: i64) -> Result<(), String> {
     emit_sidebar(&app, "chat-unread", hosts::clamp_total(total));
+    CHAT_UNREAD.store(hosts::clamp_total(total), std::sync::atomic::Ordering::SeqCst);
+    refresh_tray_total(&app);
     Ok(())
 }
 

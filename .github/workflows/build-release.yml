@@ -29,6 +29,11 @@ on:
         required: false
         type: string
         default: 'true'
+      publish:
+        description: 'Publish a public GitHub release? Set false to only build and test (installers stay as run artifacts)'
+        required: false
+        type: string
+        default: 'true'
       favicon_url:
         description: 'App icon URL (PNG, defaults to EIQ tenant favicon)'
         required: false
@@ -495,7 +500,7 @@ jobs:
   release:
     needs: [validate-version, build]
     runs-on: ubuntu-latest
-    if: always() && !failure() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: always() && !failure() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish != 'false'))
     permissions:
       contents: write
 
